@@ -1,0 +1,66 @@
+---
+title: "Hs_use_only_species_specific_gene"
+output: html_document
+date: "2022-11-23"
+---
+
+```{r}
+readRDS(file="/Users/kariyayama/Labolatory/JST_Mouse_Human/Tabula/Tabula_sapiens/TS_liver.rds") -> Hs_liver
+Hs_only <- read_tsv("Gene_list/211210_only_human_gene.symbol.txt",
+                    show_col_types = FALSE)
+
+```
+
+```{r}
+Hs_liver@assays$RNA@data %>%
+  as.data.frame %>%
+  rownames_to_column(var = "Gene_name") %>%
+  inner_join(Hs_only, by = "Gene_name") %>%
+  column_to_rownames(var = "Gene_name") %>%
+  as.matrix %>%
+  CreateSeuratObject() -> Hs_liver.only
+```
+
+```{r}
+Hs_liver.only <- FindVariableFeatures(Hs_liver.only, selection.method = "vst", nfeatures = 300)
+Hs_liver.only <- ScaleData(Hs_liver.only) # これは正しいのか？
+Hs_liver.only <- RunPCA(Hs_liver.only, do.print=FALSE, )
+ElbowPlot(object = Hs_liver.only, ndims = 50)
+```
+```{r}
+Hs_liver.only <- FindNeighbors(Hs_liver.only, dims = 1:10)
+Hs_liver.only <- FindClusters(Hs_liver.only, resolution = 0.5)
+Hs_liver.only <- RunUMAP(Hs_liver.only, dims = 1:10)
+DimPlot(Hs_liver.only, repel = T, label = T)  + NoLegend()
+
+```
+```{r}
+Hs_liver@meta.data %>%
+  rownames_to_column(var = "cell") -> Hs_liver.metadata
+Hs_liver.only@meta.data %>%
+  rownames_to_column(var = "cell") -> Hs_liver.only.metadata
+Hs_liver.only@reductions$umap@cell.embeddings %>%
+  as.data.frame %>%
+  rownames_to_column(var = "cell") -> Hs_liver.only.umap
+```
+
+```{r}
+Hs_liver.metadata %>%
+  inner_join(Hs_liver.only.metadata, by = "cell") %>%
+  inner_join(Hs_liver.only.umap, by = "cell") -> Hs_liver.only.plot
+Hs_liver.only.plot %>%
+  ggplot(aes(x= UMAP_1,
+             y = UMAP_2,
+             colour = cell_ontology_class)) + 
+  geom_point() +
+  theme_classic() -> p.Hs_liver.only.plot.cell_type
+Hs_liver.only.plot %>%
+  ggplot(aes(x= UMAP_1,
+             y = UMAP_2,
+             colour = seurat_clusters.y)) + 
+  geom_point() +
+  theme_classic() -> p.Hs_liver.only.plot.cell_ident
+p.Hs_liver.only.plot.cell_type + p.Hs_liver.only.plot.cell_ident
+
+```
+

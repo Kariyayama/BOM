@@ -1,0 +1,46 @@
+---
+title: "Untitled"
+output: html_document
+date: "2022-11-18"
+---
+
+```{r setup, include=FALSE}
+
+```
+
+```{r}
+# scAlign setup
+## Create paired dataset SCE objects to pass into scAlignCreateObject
+Hs_liver.scalign <- SingleCellExperiment(
+    assays = list(counts     = Hs_liver.one2one@assays$RNA@counts[genes.use,],
+                  logcounts  = Hs_liver.one2one@assays$RNA@data[genes.use,],
+                  scale.data = Hs_liver.one2one@assays$RNA@scale.data[genes.use,])
+)
+
+Mm_liver.scalign <- SingleCellExperiment(
+  assays = list(counts     = Mm_liver.one2one@assays$RNA@counts[genes.use,],
+                logcounts  = Mm_liver.one2one@assays$RNA@data[genes.use,],
+                scale.data = Mm_liver.one2one@assays$RNA@scale.data[genes.use,])
+)
+```
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

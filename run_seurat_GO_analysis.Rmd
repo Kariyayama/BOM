@@ -1,0 +1,156 @@
+---
+title: "run_seurat_GO_analysis"
+output: html_document
+date: "2022-12-03"
+---
+
+細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
+```{r}
+library(rbioapi)
+library(tidyverse)
+library(SingleCellExperiment)
+library(gridExtra)
+library(cowplot)
+setwd("/Users/kariyayama/Labolatory/JST_Mouse_Human/Tabula/Integration")
+source("run_seurat_GO_analysis.R")
+```
+
+BP: GO:0008150
+MF: GO:0003674
+CC: GO:0005575
+```{r}
+input <- "Liver"
+# input <- "Bone_Marrow"
+outdir <- paste(curdir, input, sep = "/")
+```
+
+定数定義
+```{r}
+test_type <- "FISHER"
+cutoff <- 0.05
+hsapiens <- 9606
+mmuculus <- 10090
+# BP <- "GO:0008150"
+BP <- "ANNOT_TYPE_ID_PANTHER_GO_SLIM_BP"
+```
+
+全てのIdentに対して実行
+```{r}
+# 細胞クラスターの一覧を取得する                                             
+read_marker_gene_list("Hs", "_") -> Hs_all
+read_marker_gene_list("Mm", "_") -> Mm_all
+bind_rows(Hs_all, Mm_all) %>%
+  select(cluster) %>% unlist %>%
+  as.numeric %>% unique %>%
+  sort %>% as.character -> cluster.list
+
+run_GOanalysis_for_all_ident("Hs", hsapiens, cluster.list)
+run_GOanalysis_for_all_ident("Mm", mmuculus, cluster.list)
+```
+GO解析の結果をプロットして可視化
+GO解析の結果を読み込み
+```{r}
+# 定数
+threshold <- -log10(0.05)
+plot_para <- element_text(angle = 90, vjust = 0.5, hjust = 0)
+height = 16
+width <- function(x)  x * 0.05 + 5
+```  
+
+全ヒト ・マウス：マウス共通の細胞クラスターについて、種特異的なマーカー遺伝子vsそれ以外のGO解析の結果を可視化する
+```{r}
+classify_GO_term <- function(ident, sp = "Hs"){
+  read_data(sp, ident, "SS") %>%
+    mutate(type = "SS") -> only.ident
+  read_data(sp, ident, "ortholog") %>%
+    mutate(type = "ortholog") -> ortholog.ident
+  
+  # SSとOrthologどっちにもhitしたID
+  only.ident %>%
+    inner_join(ortholog.ident, by = "term.id") %>%
+    dplyr::select(term.id)-> both_GO.id
+  
+  # Both, SS, Orthologを抽出する
+  rbind(only.ident, ortholog.ident) %>%
+    inner_join(both_GO.id, by = "term.id") %>%
+    mutate(group = "Both") -> both_GO
+  anti_join(only.ident, both_GO.id, by = "term.id") %>%
+    mutate(group = "SS") -> SS_only_GO
+  anti_join(ortholog.ident, both_GO.id, by = "term.id") %>%
+    mutate(group = "ortholog") -> ortholog_only_GO
+  
+  rbind(both_GO, SS_only_GO, ortholog_only_GO) -> integrated
+  if(dim(integrated)[1] > 0){
+    integrated %>%
+      mutate(fdr_log = -log10(fdr)) %>%
+      mutate(GO_short = cut_GO_short(term.label, 50)) %>%
+      mutate(SP = sp)
+  }else{
+    data.frame()
+  }
+}
+
+plot_GO_separate <- function(x){
+  x %>%
+  ggplot() +
+    theme_classic() +
+    theme(axis.text.x = plot_para) +
+    facet_grid(group ~ ., scales = "free", space = "free") +
+    geom_bar(aes(x=fdr_log, y = reorder(GO_short, fdr_log), fill = type),
+             stat = "identity", position = "dodge") +
+    ggtitle(unique(x$SP))
+}
+
+create_plot <- function(x){
+  if(dim(x)[1] > 0){
+    x %>%
+      plot_GO_separate
+  }else{
+    ggplot(x)
+  }
+}
+
+extract_term.num <- function(x){
+  if(dim(x)[1] > 0){
+    x %>%
+      dplyr::select("term.id") %>%
+      distinct %>%
+      dplyr::count() %>%
+      unlist %>%
+      return
+  }else{
+    return(0)
+  }
+}
+
+decide_height <- function(x, y){
+  extract_term.num(x) -> height.x
+  extract_term.num(y) -> height.y
+  if(height.x >= height.y) return(5 + height.x * 0.1)
+  if(height.y > height.x) return(5 + height.y * 0.1) 
+}
+```
+
+```{r}
+# ident <- 5
+for(ident in cluster.list){
+  print(ident)
+  # GO解析の結果を読み込み
+  classify_GO_term(ident, sp = "Hs") -> hs.ident
+  classify_GO_term(ident, sp = "Mm") -> mm.ident
+  
+  # Plot
+  hs.ident %>%
+    create_plot -> Hs.p
+  mm.ident %>%
+    create_plot -> Mm.p
+  Hs.p | Mm.p -> outplot
+  
+  # 保存
+  outfile <- paste(outdir, "/PANTHER/Comparison/All/compare_ident_",
+                   ident, "_human-mouse.png", sep= "")
+  height <- decide_height(hs.ident, mm.ident)
+  ggsave(outfile, outplot, width = 12, height = height)
+}
+```
+
