@@ -1,5 +1,5 @@
 ---
-title: "Liver_integration"
+title: "Thymus"
 output: html_document
 date: "2022-12-22"
 ---
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Thymus"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -282,4 +282,5 @@ paste(outdir,  "/Figure/Hs_Mm_", input,
       ".seurat_integrate.celltype_pick.only_gene_ratio.png", sep = "") %>%
   ggsave(integrated_figure.ratio, width = 12, height = 20)
 ```
+
 

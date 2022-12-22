@@ -1,7 +1,7 @@
 ---
-title: "Liver_integration"
+title: "Hs_Mm_Kidney.analysis_with_SS_genes"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-14"
 ---
 
 ```{r}
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Kidney"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +89,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 19
+npcs <- 13
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,
@@ -118,8 +118,7 @@ integrated.out
 
 ```{r}
 # 統合データの保存
-paste(outdir, "/RDS/", "Hs_Mm_", input, ".seurat.combined.rds",
-      sep = "") %>%
+paste(outdir, "/RDS/", "Hs_Mm_", input, ".seurat.combined.rds", sep = "") %>%
   saveRDS(Hs_Mm.seurat.combined, file = .)
 ```
 統合データの細胞クラスター情報を元のデータにくっつける＆統合データの細胞クラスターを利用した、マーカー遺伝子の抽出
@@ -140,24 +139,20 @@ paste(outdir, "/RDS/Hs_", input, "picked.rds", sep = "") %>%
 ヒト・マウスの種特異的な遺伝子のリストを用意
 ```{r}
 # 系統特異的な遺伝子リストを用意
-Hs_only <- read_tsv(paste(curdir,
-                          "Gene_name/Hs.Gene_name.species_specific.v2.txt",
+Hs_only <- read_tsv(paste(curdir, "Gene_name/Hs.Gene_name.species_specific.v2.txt", 
                           sep = "/"),
                     show_col_types = FALSE)
-Mm_only <- read_tsv(paste(curdir,
-                          "/Gene_name/Mm.Gene_name.species_specific.v2.txt",
+Mm_only <- read_tsv(paste(curdir, "/Gene_name/Mm.Gene_name.species_specific.v2.txt",
                           sep = "/"),
                     show_col_types = FALSE)
 
 # 対応関係表に含まれている遺伝子リスト
-Hs_all.gene <- read_tsv(paste(curdir,
-                              "Gene_name/Hs.Gene_name.homology_type.txt",
+Hs_all.gene <- read_tsv(paste(curdir, "Gene_name/Hs.Gene_name.homology_type.txt",
                               sep = "/"),
                         show_col_types = FALSE) %>%
                   select("Gene_name") %>%
                   distinct
-Mm_all.gene <- read_tsv(paste(curdir,
-                              "/Gene_name/Mm.Gene_name.homology_type.txt",
+Mm_all.gene <- read_tsv(paste(curdir, "/Gene_name/Mm.Gene_name.homology_type.txt",
                               sep = "/"),
                         show_col_types = FALSE) %>%
                   select("Gene_name") %>%
@@ -175,7 +170,11 @@ paste(outdir, "/Marker_gene/Mm_", input,
       ".seurat_integrate.celltype_pick.Mm_ortholog.markergene.tsv",
       sep = "") %>%
   ortholog_markers(Mm_seurat.picked.markers, Mm_only, Mm_all.gene, 0.05, .)
-
+# マウスマーカー遺伝子
+paste(outdir, "/Marker_gene/Mm_", input, 
+      ".seurat_integrate.celltype_pick.Mm_ortholog.markergene.tsv",
+      sep = "") %>%
+      ss_markers(Mm_seurat.picked.markers, Mm_only, 0.05, .)
 # ヒト特異的マーカー遺伝子
 paste(outdir, "/Marker_gene/Hs_", input, ".seurat_integrate.celltype_pick.Hs_only.markergene.tsv", sep = "") %>%
   ss_markers(Hs_seurat.picked.markers, Hs_only, 0.05, .)

@@ -1,7 +1,7 @@
 ---
-title: "Liver_integration"
+title: "Prostate"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-21"
 ---
 
 ```{r}
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Prostate"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -38,7 +38,7 @@ Hs_seurat %>%
   extract_one2one_cell(Hs_cell, "Gene_name") -> Hs_seurat.one2one.table
 
 # マウス
-readRDS(file=paste(outdir, "/TM_", input, ".rds", sep = "")) -> Mm_seurat
+readRDS(file=paste(outdir, "/TM_", input, ".rds", sep = "")) -> Mm_seurat # マウスではない
 Mm_cell <- celltype_pick(Mm_seurat)
 Mm_seurat %>%
   extract_one2one_cell(Mm_cell, "Mouse_gene_name") -> Mm_seurat.one2one.table
@@ -89,7 +89,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 19
+npcs <- 22
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,

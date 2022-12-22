@@ -1,7 +1,7 @@
 ---
-title: "run_seurat_GO_analysis"
+title: "Kidney_GOanalysis"
 output: html_document
-date: "2022-12-03"
+date: "2022-12-14"
 ---
 
 細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
@@ -19,7 +19,7 @@ BP: GO:0008150
 MF: GO:0003674
 CC: GO:0005575
 ```{r}
-input <- "Liver"
+input <- "Kidney"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -42,10 +42,7 @@ bind_rows(Hs_all, Mm_all) %>%
   select(cluster) %>% unlist %>%
   as.numeric %>% unique %>%
   sort %>% as.character -> cluster.list
-```
 
-GO解析
-```{r}
 run_GOanalysis_for_all_ident("Hs", hsapiens, cluster.list)
 run_GOanalysis_for_all_ident("Mm", mmuculus, cluster.list)
 ```
@@ -82,55 +79,4 @@ for(ident in cluster.list){
 }
 ```
 
-```{r}
-# 2種両方で濃縮されているGOターム
-inner_join(hs.ident, mm.ident,
-           by = c("term.id")) %>%
-  dplyr::select(term.id) -> both_common.go
-
-# 両種の細胞種に濃縮されているGOターム
-inner_join(hs.ident, mm.ident, by = c("term.id", "group")) %>%
-  dplyr::select(term.id) -> both_common
-bind_rows(hs.ident, mm.ident) %>%
-  inner_join(both_common, by = "term.id") %>%
-  group_by(term.label) %>%
-  ggplot(aes(x = SP, y = term.label, color = group)) +
-  geom_point() +
-  geom_line() +
-  theme_bw()
-
-# 両種の細胞種に濃縮されているが対応関係が異なるGOターム
-anti_join(hs.ident, mm.ident, by = c("term.id", "group")) %>%
-  inner_join(both_common.go, by = "term.id") %>%
-  dplyr::select(term.id) -> both_differ
-bind_rows(hs.ident, mm.ident) %>%
-  inner_join(both_differ, by = "term.id") %>%
-  group_by(term.label) %>%
-  ggplot(aes(x = SP, y = term.label, color = group)) +
-  geom_point() +
-  geom_line() +
-  theme_bw()
-
-# ヒトの細胞種のみに濃縮されているGOターム
-anti_join(hs.ident, mm.ident, by = c("term.id")) %>%
-  dplyr::select(term.id) -> only_hs_go_term
-bind_rows(hs.ident, mm.ident) %>%
-  inner_join(only_hs_go_term, by = "term.id") %>%
-  group_by(term.label) %>%
-  ggplot(aes(x = SP, y = term.label, color = group)) +
-  geom_point() +
-  geom_line() +
-  theme_bw()
-
-# マウスの細胞種のみに濃縮されているGOターム
-anti_join(mm.ident, hs.ident, by = c("term.id")) %>%
-  dplyr::select(term.id) -> only_mm_go_term
-bind_rows(hs.ident, mm.ident) %>%
-  inner_join(only_mm_go_term, by = "term.id") %>%
-  group_by(term.label) %>%
-  ggplot(aes(x = SP, y = term.label, color = group)) +
-  geom_point() +
-  geom_line() +
-  theme_bw()
-```
 

@@ -1,7 +1,7 @@
 ---
-title: "Liver_integration"
+title: "Fat"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-21"
 ---
 
 ```{r}
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Fat"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +89,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 19
+npcs <- 22
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,
@@ -132,6 +132,13 @@ paste(outdir, "/RDS/Mm_", input, "picked.rds", sep = "") %>%
 
 # ヒト
 Hs_seurat.picked <- picked_gene_list(Hs_seurat, Hs_cell, "Hs")
+### ここでエラーがでた
+# SCTransformのエラー、バグ？
+# h(simpleError(msg, call)) でエラー: 
+# 引数 'x' の評価中にエラーが起きました (関数 't' に対するメソッドの選択時): TRUE/FALSE # が必要なところが欠損値です
+
+
+
 Hs_seurat.picked.markers <- find_merker(Hs_seurat.picked, "Hs")
 paste(outdir, "/RDS/Hs_", input, "picked.rds", sep = "") %>%
   saveRDS(Hs_seurat.picked, file = .)

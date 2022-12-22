@@ -1,7 +1,7 @@
 ---
-title: "Liver_integration"
+title: "Pancreas"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-21"
 ---
 
 ```{r}
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Pancreas"
 outdir <- paste(curdir, input, sep = "/")
 ```
 

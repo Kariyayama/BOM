@@ -1,9 +1,8 @@
 ---
-title: "Liver_integration"
+title: "Large_Intestine"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-21"
 ---
-
 ```{r}
 curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
 # renv::restore()
@@ -25,7 +24,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Large_Intestine"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +88,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 19
+npcs <- 25
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,

@@ -100,7 +100,7 @@ find_merker <- function(seurat.picked, sp){
   seurat.picked@active.ident <- cell.ident
   FindAllMarkers(seurat.picked, only.pos = TRUE, min.pct = 0.25,
                  logfc.threshold = 0.25) -> seurat.picked.markers
-  outable_marker <- paste(outdir, "/", sp, "_", input,
+  outable_marker <- paste(outdir, "/Marker_gene/", sp, "_", input,
                             ".seurat_integrate.celltype_pick_markergene.tsv",
                             sep = "")
 

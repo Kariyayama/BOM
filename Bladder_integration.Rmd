@@ -1,7 +1,7 @@
 ---
-title: "Liver_integration"
+title: "Bladder"
 output: html_document
-date: "2022-12-22"
+date: "2022-12-21"
 ---
 
 ```{r}
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 
 解析に使う組織の選択
 ```{r}
-input <- "Liver"
+input <- "Bladder"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +89,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 19
+npcs <- 22
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,

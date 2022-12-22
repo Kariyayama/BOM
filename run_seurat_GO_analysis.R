@@ -82,70 +82,86 @@ read_data <- function(sp, cluster.id, target = "all"){
     filter(plus_minus == "+")
 }
 
-# データの加工、NAを1に変換する
-na_to_1 <- function(x) as.numeric(replace(x, is.na(x), 1))
+classify_GO_term <- function(ident, sp = "Hs"){
+  read_data(sp, ident, "SS") %>%
+      mutate(type = "SS") -> only.ident
+  read_data(sp, ident, "ortholog") %>%
+      mutate(type = "ortholog") -> ortholog.ident
+
+  # SSとOrthologどっちにもhitしたID
+  only.ident %>%
+      inner_join(ortholog.ident, by = "term.id") %>%
+      dplyr::select(term.id)-> both_GO.id
+
+  # Both, SS, Orthologを抽出する
+  rbind(only.ident, ortholog.ident) %>%
+      inner_join(both_GO.id, by = "term.id") %>%
+      mutate(group = "Both") -> both_GO
+  anti_join(only.ident, both_GO.id, by = "term.id") %>%
+      mutate(group = "SS") -> SS_only_GO
+  anti_join(ortholog.ident, both_GO.id, by = "term.id") %>%
+      mutate(group = "ortholog") -> ortholog_only_GO
+
+  rbind(both_GO, SS_only_GO, ortholog_only_GO) -> integrated
+  if(dim(integrated)[1] > 0){
+      integrated %>%
+          mutate(fdr_log = -log10(fdr)) %>%
+          mutate(GO_short = cut_GO_short(term.label, 50)) %>%
+          mutate(SP = sp)
+  }else{
+      data.frame()
+  }
+}
+
+plot_GO_separate <- function(x){
+    x %>%
+        ggplot() +
+        theme_classic() +
+        theme(axis.text.x = plot_para,
+              axis.title.y = element_blank(),
+              legend.position = "none") +
+        facet_grid(group ~ ., scales = "free", space = "free") +
+        geom_bar(aes(x=fdr_log, y = reorder(GO_short, fdr_log), fill = type),
+                 stat = "identity", position = "dodge") +
+        ggtitle(unique(x$SP))
+}
+
+create_plot <- function(x){
+    if(dim(x)[1] > 0){
+        x %>%
+            plot_GO_separate
+    }else{
+        ggplot(x)
+  }
+}
+
+extract_term.num <- function(x){
+    if(dim(x)[1] > 0){
+        x %>%
+            dplyr::select("term.id") %>%
+            distinct %>%
+            dplyr::count() %>%
+            unlist %>%
+            return
+    }else{
+        return(0)
+    }
+}
+
+decide_height <- function(x, y){
+    extract_term.num(x) -> height.x
+    extract_term.num(y) -> height.y
+    if(height.x >= height.y) return(5 + height.x * 0.1)
+    if(height.y > height.x) return(5 + height.y * 0.1)
+}
 
 # GO解析の結果をplot
 plot_gocompare <- function(out_table){
     out_table %>%
-      mutate(GO_short_acc = make_GO_short(term.id, term.label)) %>%
-      ggplot() +
-        theme_classic() +
-        theme(axis.text.x = plot_para)
+        mutate(GO_short_acc = make_GO_short(term.id, term.label)) %>%
+        ggplot() +
+            theme_classic() +
+            theme(axis.text.x = plot_para)
 }
 
-# 種間比較
-merge_different_species <- function(hs, mm){
-    hs %>%
-      full_join(mm, by = c("term.id", "term.label")) %>%
-      dplyr::rename(human = fdr.x, mouse = fdr.y) %>%
-      mutate(human = na_to_1(human), mouse = na_to_1(mouse)) %>%
-      dplyr::select(c("term.id", "term.label", "human", "mouse")) %>%
-      pivot_longer(cols=-c(term.id, term.label),
-                   names_to = "SP", values_to = "FDR") %>%
-      mutate(fdr_log = -log10(FDR))
-}
 
-# homology_typeごと
-merge_different_homology_type <- function(SS, ortholog){
-    SS %>%
-        full_join(ortholog, by = c("term.id", "term.label")) %>%
-        dplyr::rename(SS = fdr.x, ortholog = fdr.y) %>%
-        mutate(SS = na_to_1(SS), ortholog = na_to_1(ortholog)) %>%
-        dplyr::select(c("term.id", "term.label", "SS", "ortholog")) %>%
-        pivot_longer(cols=-c(term.id, term.label),
-                     names_to = "ortholog_type", values_to = "FDR") %>%
-        mutate(fdr_log = -log10(FDR))
-}
-
-plot_SS_ortholog_compare <- function(sp){
-  result <- data.frame()
-  read_marker_gene_list(sp, "_") %>%
-    select(cluster) %>%
-    distinct %>% unlist %>%
-    as.character -> cluster_list
-
-  for(ident in cluster_list){
-    print(ident)
-    read_data(sp, ident, "SS") -> all.ident
-    read_data(sp, ident, "ortholog") -> ortholog.ident
-    outfile <- paste(outdir, "/PANTHER/Comparison/All/", sp,
-                     "compare_ident_", ident, "_SS-ortholog.png", sep= "")
-    merge_different_homology_type(all.ident, ortholog.ident) -> out_table
-    result <- out_table %>%
-      mutate(cluster.id = ident) %>%
-      bind_rows(result, .)
-
-    print(out_table)
-    if(dim(out_table)[1] > 0){
-      plot_gocompare(out_table) +
-        geom_bar(aes(x=GO_short_acc, y = fdr_log, fill = ortholog_type),
-                 stat = "identity", position = "dodge") +
-        geom_hline(aes(yintercept = threshold), linetype = "dashed") -> p1
-
-      ggsave(outfile, p1, width = width(dim(out_table)[1]), height = height,
-             limitsize = FALSE)
-    }
-  }
-  return(result)
-}

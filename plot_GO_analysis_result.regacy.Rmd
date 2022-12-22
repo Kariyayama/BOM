@@ -1,0 +1,202 @@
+---
+title: "plot_GO_analysis_result.regacy"
+output: html_document
+date: "2022-12-13"
+---
+```{r}
+result.sp <- data.frame()
+for(ident in cluster.list){
+  print(ident)
+  read_data("Hs", ident, "SS") -> Hs_all.ident
+  read_data("Mm", ident, "SS") -> Mm_all.ident
+  outfile <- paste(outdir, "/PANTHER/Comparison/All/compare_ident_",
+               ident, "_human-mouse.png", sep= "")
+
+  merge_different_species(Hs_all.ident,
+                          Mm_all.ident) -> out_table
+
+  result.sp <- out_table %>%
+    mutate(cluster.id = ident) %>% 
+    bind_rows(result.sp, .)
+  
+  if(dim(out_table)[1] > 0){
+    plot_gocompare(out_table) +
+      geom_bar(aes(x=GO_short_acc, y = fdr_log, fill = SP),
+               stat = "identity", position = "dodge") +
+      geom_hline(aes(yintercept = threshold), linetype = "dashed") -> p1
+    
+    ggsave(outfile, p1, width = width(dim(out_table)[1]),
+           height = height, limitsize = FALSE)
+  }
+}
+```
+
+ヒトのオーソログがある遺伝子と種特異的遺伝子間の比較
+```{r}
+result.hs <- plot_SS_ortholog_compare("Hs")
+result.mm <- plot_SS_ortholog_compare("Mm")
+```
+
+
+```{r}
+# 各細胞クラスターについて種特異的なマーカー遺伝子の一覧を取得する
+filter_terms_sp <- function(input, type, cluster.ident){
+  if(dim(input)[1] > 0){
+    input %>%
+      mutate(SP = type) %>%
+      mutate(cluster.id = cluster.ident)
+  }
+}
+```
+
+```{r}
+result.sp <- data.frame()
+for(ident in cluster.list){
+  print(ident)
+  read_data("Hs", ident, "SS") -> Hs_all.ident
+  read_data("Mm", ident, "SS") -> Mm_all.ident
+  outfile <- paste(outdir, "/PANTHER/Comparison/All/compare_ident_",
+               ident, "_human-mouse.png", sep= "")
+  
+  filter_terms_sp(Hs_all.ident, "human", ident) %>% 
+      bind_rows(result.sp, .) -> result.sp
+  filter_terms_sp(Mm_all.ident, "mouse", ident) %>% 
+      bind_rows(result.sp, .) -> result.sp
+}
+
+result.sp %>%
+  mutate(fdr_log = -log10(fdr)) %>%
+  ggplot(aes(y= cluster.id, x = term.label, size = fdr_log, color = SP)) +
+  geom_point(alpha = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0.5, hjust = 0)) -> result.sp.plot
+
+outfile <- paste(outdir, "/PANTHER/Comparison/All/compare_idents_human-mouse.png", sep= "")
+ggsave(outfile, result.sp.plot, width = width(dim(result.sp)[1]),
+           height = height, limitsize = FALSE)
+```
+
+```{r}
+filter_terms <- function(input, type, cluster.ident){
+  if(dim(input)[1] > 0){
+    input %>%
+      mutate(ortholog_type = type) %>%
+      mutate(cluster.id = cluster.ident)
+  }
+}
+```
+
+```{r}
+sp <- "Hs"
+# sp <- "Mm"
+read_marker_gene_list(sp, "_") %>%
+    select(cluster) %>%
+    distinct %>% unlist %>%
+    as.character -> cluster_list
+result.homolog <- data.frame()
+
+for(ident in cluster.list){
+  print(ident)
+  read_data(sp, ident, "SS") -> only.ident
+  read_data(sp, ident, "ortholog") -> ortholog.ident
+  outfile <- paste(outdir, "/PANTHER/Comparison/All/", sp,
+                   "_compare_idents_All_SS-ortholog.png",
+                   sep= "")
+  
+  filter_terms(only.ident, "SS", ident) %>% 
+      bind_rows(result.only, .) -> result.only
+  filter_terms(ortholog.ident, "ortholog", ident) %>% 
+      bind_rows(result.ortholog, .) -> result.ortholog
+}
+
+# 濃縮されたGOタームを結合
+bind_rows(result.only, result.ortholog) %>%
+  mutate(fdr_log = -log10(fdr)) -> result.homology
+result.homology %>%
+  ggplot(aes(y= cluster.id, x = term.label, color = ortholog_type, size = fdr_log)) +
+  geom_point(alpha = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = plot_para) -> result.homolog.plot
+
+ggsave(outfile, result.homolog.plot, width = width(dim(result.homology)[1]),
+       height = height, limitsize = FALSE)
+```
+```{r}
+plot_para <- element_text(angle = 270, vjust = 0.5, hjust = 0)
+
+sp <- "Hs"
+# sp <- "Mm"
+read_marker_gene_list(sp, "_") %>%
+    select(cluster) %>%
+    distinct %>% unlist %>%
+    as.character -> cluster_list
+  
+result.only <- data.frame()
+result.ortholog <- data.frame()
+
+for(ident in cluster.list){
+  read_data(sp, ident, "SS") -> only.ident
+  read_data(sp, ident, "ortholog") -> ortholog.ident
+  
+  filter_terms(only.ident, "SS", ident) %>% 
+      bind_rows(result.only, .) -> result.only
+  filter_terms(ortholog.ident, "ortholog", ident) %>% 
+      bind_rows(result.ortholog, .) -> result.ortholog
+}
+
+outfile <- paste(outdir, "/PANTHER/Comparison/All/", sp, "_compare_idents_SS-ortholog.png",
+                   sep= "")
+# 種特異的な遺伝子に濃縮されているGOターム一覧を取得する
+result.only %>%
+  dplyr::select(term.id) %>%
+  distinct -> term.id.list
+result.ortholog %>%
+  inner_join(term.id.list, by = "term.id") -> result.ortholog
+
+# 濃縮されたGOタームを結合
+bind_rows(result.only, result.ortholog) %>%
+  mutate(fdr_log = -log10(fdr)) -> result.homology
+
+result.homology %>%
+  ggplot(aes(y= cluster.id, x = term.label, color = ortholog_type, size = fdr_log)) +
+  geom_point(alpha = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = plot_para) -> result.homolog.plot 
+
+ggsave(outfile, result.homolog.plot, width = dim(result.homology)[1] * 0.02 + 5,
+       height = height, limitsize = FALSE)
+```
+
+```{r}
+cut_GO_short <- function(short, n){
+    result <- c()
+    for(i in 1:length(short)){
+          if(nchar(unlist(short[i])) > (n-3)){
+              result <- c(result, paste(substr(short[i], 1, n), "...", sep = ""))
+          }else{
+              result <- c(result, short[i])
+          }
+    }
+    return(result)
+}
+```
+
+```{r}
+result.sp %>%
+  mutate(fdr_log = -log10(fdr)) %>%
+  ggplot(aes(x=SP, y = fdr_log, fill = SP)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(cluster.id ~ term.label) +
+    theme_bw() +
+    theme(axis.text.x = plot_para)
+
+result.homology %>%
+  mutate(fdr_log = -log10(fdr)) %>%
+  mutate(GO_short = cut_GO_short(term.label, 50)) %>%
+  ggplot(aes(x=GO_short, y = fdr_log, fill = ortholog_type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(cluster.id ~ .) +
+    theme_test() +
+    theme(axis.text.x = plot_para)
+# dplyr::complete()で埋められるらしい
+```
