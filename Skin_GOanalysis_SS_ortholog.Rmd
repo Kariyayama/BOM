@@ -1,9 +1,8 @@
 ---
-title: "run_seurat_GO_analysis"
+title: "Skin"
 output: html_document
-date: "2022-12-03"
+date: "2022-12-23"
 ---
-
 細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
 ```{r}
 library(rbioapi)
@@ -19,7 +18,7 @@ BP: GO:0008150
 MF: GO:0003674
 CC: GO:0005575
 ```{r}
-input <- "Liver"
+input <- "Skin"
 outdir <- paste(curdir, input, sep = "/")
 ```
 

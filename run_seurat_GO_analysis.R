@@ -106,7 +106,7 @@ classify_GO_term <- function(ident, sp = "Hs"){
   if(dim(integrated)[1] > 0){
       integrated %>%
           mutate(fdr_log = -log10(fdr)) %>%
-          mutate(GO_short = cut_GO_short(term.label, 50)) %>%
+          mutate(GO_short = cut_GO_short(term.id, term.label, 50)) %>%
           mutate(SP = sp)
   }else{
       data.frame()
@@ -151,8 +151,13 @@ extract_term.num <- function(x){
 decide_height <- function(x, y){
     extract_term.num(x) -> height.x
     extract_term.num(y) -> height.y
-    if(height.x >= height.y) return(5 + height.x * 0.1)
-    if(height.y > height.x) return(5 + height.y * 0.1)
+    if(height.x >= height.y) height <- 5 + height.x * 0.1
+    if(height.y > height.x) height <- 5 + height.y * 0.1
+    if(height > 49){
+        return(49)
+    }else{
+        return(height)
+    }
 }
 
 # GO解析の結果をplot
@@ -164,4 +169,19 @@ plot_gocompare <- function(out_table){
             theme(axis.text.x = plot_para)
 }
 
-
+cut_GO_short <- function(acc, short, length = 40){
+    result <- c()
+    for(i in 1:length(acc)){
+          if(nchar(unlist(short[i])) > length){
+              result <- c(result,
+                          paste(substr(short[i], 1, (length - 3)),
+                                "... (", acc[i], ")",
+                                sep=""))
+          }else{
+              result <- c(result,
+                          paste(short[i], " (", acc[i], ")",
+                                sep=""))
+          }
+    }
+    return(result)
+}

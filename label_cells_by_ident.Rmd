@@ -1,0 +1,97 @@
+---
+title: "label_cells_by_Ident"
+output: html_document
+date: "2022-12-27"
+---
+ライブラリ
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+setwd("/Users/kariyayama/Labolatory/JST_Mouse_Human/Tabula/Integration")
+set_here("/Users/kariyayama/Labolatory/JST_Mouse_Human/Tabula/Integration")
+source("run_seurat_GO_analysis.R")
+source("./count_marker_gene_by_GO.R")
+```
+
+遺伝子の対応関係表
+```{r}
+paste("Gene_name", 
+      "Hs.Gene_name.homology_type.Tabula_sapiens.not_uniq_relation.manual_curate.txt",
+      sep = "/") %>%
+  read_tsv(show_col_types = FALSE) -> Hs_homology
+paste("Gene_name",
+      "Mm.Gene_name.homology_type.Tabula_muris.not_uniq_relation.txt",
+      sep = "/") %>%
+  read_tsv(show_col_types = FALSE) -> Mm_homology
+
+Hs_homology %>%
+  dplyr::count(Mouse_homology_type.x) %>%
+  mutate(customclassif = "All_gene")-> Hs_all_genes
+Mm_homology %>%
+  dplyr::count(Human_homology_type.x) %>%
+  mutate(customclassif = "All_gene")-> Mm_all_genes
+```
+
+Seurat解析データの読み込み
+```{r}
+for(organ in c("Bladder", "Bone_Marrow", "Heart", "Large_Intestine",
+               "Liver", "Kidney", "Lung", "Pancreas", "Skin", "Trachea",
+               "Thymus", "Spleen")){
+  print(organ)
+  paste(curdir, "/", organ,"/RDS/Hs_", organ, "picked.rds", sep = "") %>%
+    readRDS() -> Hs_seurat.picked
+  
+  # マーカー遺伝子数を対応関係ごとに合計
+  # ヒト
+  Hs_marker_count <- extract_Hs_count_gene(organ)
+  # マウス
+  Mm_marker_count <- extract_Mm_count_gene(organ)
+  
+  # ヒトとマウスを結合
+  bind_rows(Hs_marker_count, Mm_marker_count) %>% 
+    inner_join(Hs_seurat_picked.meta.data,
+               by = c("cluster" = "integrated_seurat_cluster")
+               ) ->   Hs_Mm_marker_count
+  
+  # 遺伝子数をプロット
+  Hs_Mm_marker_count %>%
+    ggplot(aes(x = ratio, y = homology_type, fill = homology_type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = n.x), hjust = -0.3) +
+    facet_grid(SP ~ reorder(cluster, cluster)) +
+    theme_bw() +
+    scale_x_continuous(limits = c(0, 1.3)) +
+    NoLegend() -> p1
+  width_plot <- bind_rows(Hs_all_count, Mm_all_count) %>%
+    select(cluster) %>%
+    distinct %>%
+    dim
+  
+  ggsave(paste(organ, "/Marker_gene/Hs_Mm_", organ,
+               "_seurat_integrated.cluster_marker_count.png", sep = ""),
+         p1, width = 1 + 2 * width_plot[1])
+  
+  # 表を出力
+  Hs_Mm_marker_count %>%
+    mutate(SP_cell = paste(SP, cluster, sep ="_")) %>%
+    group_by(SP_cell) %>%
+    dplyr::select(c("homology_type", "n.x", "SP_cell")) %>%
+    pivot_wider(names_from = SP_cell,
+                values_from = n.x, values_fill = 0) %>%
+    write.table(file = paste(organ, "/Marker_gene/Hs_Mm_", organ,
+                             "_seurat_integrated.cluster_marker_count.tsv",
+                             sep = ""),
+              quote = F, row.names = F, sep = "\t")
+  # 表を出力
+  Hs_Mm_marker_count %>%
+    mutate(SP_cell = paste(SP, cluster, sep ="_")) %>%
+    group_by(SP_cell) %>%
+    mutate(ratio = round(ratio, digits = 3)) %>%
+    dplyr::select(c("homology_type", "ratio", "SP_cell")) %>%
+    pivot_wider(names_from = SP_cell,
+                values_from = ratio, values_fill = 0) %>%
+    write.table(file = paste(organ, "/Marker_gene/Hs_Mm_", organ,
+                             "_seurat_integrated.cluster_marker_ratio.tsv", sep = ""),
+              quote = F, row.names = F, sep = "\t")
+}
+```
+

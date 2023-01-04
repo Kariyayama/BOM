@@ -64,11 +64,51 @@ create_one2one_object <- function(seurat.one2one.table, seurat_object,
 picked_gene_list <- function(seurat_object, cells.list, sp){
   seurat_object@assays$RNA@counts[, cells.list] %>%
     CreateSeuratObject() -> seurat.picked
+  # 元のSeurat Objectから、メタデータを追加
   Hs_Mm.seurat.combined@meta.data %>%
     filter(SP == sp) %>%
     select(seurat_clusters) ->
     seurat.picked[["integrated_seurat_cluster"]]
+  Hs_Mm.seurat.combined@meta.data %>%
+    filter(SP == sp) %>%
+    select(cell_ontology_class) ->
+    seurat.picked[["cell_ontology_class"]]
 
+  # Identに対応する細胞種をアノテーション
+  seurat.picked@meta.data %>%
+      dplyr::select(c("integrated_seurat_cluster",
+                      "cell_ontology_class")) %>%
+      group_by(integrated_seurat_cluster) %>%
+      dplyr::count(cell_ontology_class) %>%
+      top_n(n=1, wt = n) -> cell_ontology_class_scores
+  dplyr::count(cell_ontology_class_scores,
+               integrated_seurat_cluster) %>%
+    filter(n > 1) -> double_data
+
+  if(dim(double_data)[1] > 0){
+    for(target in double_data){
+        target_ident <- cell_ontology_class_scores$integrated_seurat_cluster == target
+        cell_ontology_class_scores[target_ident, "cell_ontology_class"] %>%
+            unlist() %>%
+            paste(collapse = "_") -> modified_ontology
+        cell_ontology_class_scores[target_ident, "cell_ontology_class"] <- modified_ontology
+    }
+  }
+  cell_ontology_class_scores %>%
+      mutate(customclassif = paste(integrated_seurat_cluster,
+                                   cell_ontology_class,
+                                   sep = "_")) %>%
+      distinct -> cell_ontology_class_scores
+
+  print(cell_ontology_class_scores)
+
+  seurat.picked@meta.data %>%
+    rownames_to_column(var = "cells") %>%
+    inner_join(cell_ontology_class_scores,
+               by = "integrated_seurat_cluster") %>%
+    column_to_rownames(var = "cells") -> seurat.picked@meta.data
+
+  # データを正規化
   seurat.picked <- SCTransform(seurat.picked,
                                variable.features.n = 2000)
   return(seurat.picked)
@@ -162,3 +202,16 @@ marker_gene_ratio <- function(picked.markers, target_gene.list,
                by = "cluster")
 }
 
+make_term_short <- function(short, length = 20){
+    result <- c()
+    for(i in 1:length(short)){
+          if(nchar(unlist(short[i])) > length){
+              result <- c(result,
+                          paste(substr(short[i], 1, length -3 ),
+                                "...", sep=""))
+          }else{
+              result <- c(result, short[i])
+          }
+    }
+    return(result)
+}

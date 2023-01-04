@@ -1,7 +1,7 @@
 ---
-title: "run_seurat_GO_analysis"
+title: "Bladder"
 output: html_document
-date: "2022-12-03"
+date: "2022-12-22"
 ---
 
 細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
@@ -19,7 +19,7 @@ BP: GO:0008150
 MF: GO:0003674
 CC: GO:0005575
 ```{r}
-input <- "Liver"
+input <- "Bladder"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -81,5 +81,3 @@ for(ident in cluster.list){
   ggsave(outfile, outplot, width = 12, height = height)
 }
 ```
-
-
