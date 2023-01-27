@@ -1,5 +1,5 @@
 ---
-title: "Lung"
+title: "Kidney"
 output: html_document
 date: "2022-12-28"
 ---
@@ -16,16 +16,13 @@ library(Seurat)
 library(SingleCellExperiment)
 library(gridExtra)
 library(cowplot)
-read_tsv("~/Labolatory/JST_Mouse_Human/Tabula/Integration/Hs_Mm_one2one_genelist.tsv",
-         show_col_types = FALSE) ->
-  Hs_Mm
 source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 ```
 
 解析に使う組織の選択
 ```{r}
 set.seed(12345)
-input <- "Lung"
+input <- "Kidney"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +86,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 26
+npcs <- 13
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,
@@ -140,32 +137,6 @@ paste(outdir, "/RDS/Hs_", input, "picked.rds", sep = "") %>%
   saveRDS(Hs_seurat.picked, file = .)
 ```
 
-ヒト・マウスの種特異的な遺伝子のリストを用意
-```{r}
-# 系統特異的な遺伝子リストを用意
-Hs_only <- read_tsv(paste(curdir,
-                          "Gene_name/Hs.Gene_name.species_specific.v2.txt",
-                          sep = "/"),
-                    show_col_types = FALSE)
-Mm_only <- read_tsv(paste(curdir,
-                          "/Gene_name/Mm.Gene_name.species_specific.v2.txt",
-                          sep = "/"),
-                    show_col_types = FALSE)
-
-# 対応関係表に含まれている遺伝子リスト
-Hs_all.gene <- read_tsv(paste(curdir,
-                              "Gene_name/Hs.Gene_name.homology_type.txt",
-                              sep = "/"),
-                        show_col_types = FALSE) %>%
-                  select("Gene_name") %>%
-                  distinct
-Mm_all.gene <- read_tsv(paste(curdir,
-                              "/Gene_name/Mm.Gene_name.homology_type.txt",
-                              sep = "/"),
-                        show_col_types = FALSE) %>%
-                  select("Gene_name") %>%
-                  distinct
-```
 ヒトとマウスについて、マーカー遺伝子のうち種特異的なものを抽出
 ```{r}
 # マウス特異的マーカー遺伝子

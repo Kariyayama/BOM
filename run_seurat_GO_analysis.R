@@ -1,3 +1,9 @@
+library(rbioapi)
+library(tidyverse)
+library(SingleCellExperiment)
+library(gridExtra)
+library(cowplot)
+
 # 解析用の関数
 filter_cluster <- function(x, ident){
   x %>%

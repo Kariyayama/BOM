@@ -1,7 +1,7 @@
 ---
-title: "Lung"
+title: "Trachea_version2"
 output: html_document
-date: "2022-12-28"
+date: "2023-01-09"
 ---
 ```{r}
 curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
@@ -25,7 +25,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 解析に使う組織の選択
 ```{r}
 set.seed(12345)
-input <- "Lung"
+input <- "Trachea"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -89,7 +89,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 26
+npcs <- 22
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,

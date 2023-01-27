@@ -1,0 +1,80 @@
+---
+title: "GO_analysis"
+output: html_document
+date: "2023-01-26"
+---
+事前準備
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+source("run_seurat_GO_analysis.R")
+```
+
+グローバル変数
+```{r}
+test_type <- "FISHER"
+cutoff <- 0.05
+hsapiens <- 9606
+mmuculus <- 10090
+# BP <- "GO:0008150"
+BP <- "ANNOT_TYPE_ID_PANTHER_GO_SLIM_BP"
+header = "number_in_list\tfold_enrichment\tfdr\texpected \tnumber_in_reference\tpValue\tplus_minus\tterm.id\tterm.label"
+types <- c("shared", "Hs_only") # + , "No_homology_info"
+```
+
+```{r}
+go_analysis <- function(marker.genes, taxon.id){
+ if(length(marker.genes) > 0){
+    rba_panther_enrich(marker.genes, taxon.id, BP, test_type = test_type,
+                       cutoff = cutoff) -> marker.result
+    write.table(marker.result$result, file = outfile,
+                quote = F, row.names = F, sep="\t")
+  }else{
+    header %>%
+      write(file = outfile)
+  } 
+}
+```
+
+```{r}
+# input <- "Liver"
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine",
+            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea")
+for(input in organs){
+    outdir <- paste(curdir, input, sep = "/")
+    paste(outdir, "PANTHER/Hs_shared-only", sep = "/") %>%
+      dir.create()
+    
+    read_marker_gene_list("Hs", "_") %>%
+      select(cluster) %>%
+      distinct %>%
+      unlist %>%
+      as.numeric -> Hs_all
+    for(clstr in Hs_all){
+        paste(outdir, "/Marker_gene/",
+              "Hs_Mm_", input, ".seurat_integrate.cluster_", clstr, ".homology.tsv",
+              sep = "") %>%
+          read_tsv(show_col_types = FALSE) -> marker
+        
+        for(type in types){
+          print(paste(input, clstr, types))
+          marker %>%
+            filter(share == type) %>%
+            select(Gene_name) %>%
+            unlist %>%
+            as.character -> marker.genes
+          # Outfile
+          outfile <- paste(outdir, "/PANTHER/Hs_shared-only/", 
+                           "Hs_Mm_", input, ".seurat_integrate.cluster_", clstr, "_", type, ".tsv", 
+                           sep = "")
+          # GO analysis
+          go_analysis(marker.genes, hsapiens)
+          Sys.sleep(1)
+        }
+    }
+}
+
+```

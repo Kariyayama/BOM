@@ -1,7 +1,7 @@
 ---
-title: "Spleen"
+title: "Trachea"
 output: html_document
-date: "2022-12-23"
+date: "2023-01-23"
 ---
 細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
 ```{r}
@@ -18,7 +18,7 @@ BP: GO:0008150
 MF: GO:0003674
 CC: GO:0005575
 ```{r}
-input <- "Spleen"
+input <- "Trachea"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -47,6 +47,10 @@ GO解析
 ```{r}
 run_GOanalysis_for_all_ident("Hs", hsapiens, cluster.list)
 run_GOanalysis_for_all_ident("Mm", mmuculus, cluster.list)
+```
+
+
+```{r}
 ```
 GO解析の結果をプロットして可視化
 GO解析の結果を読み込み

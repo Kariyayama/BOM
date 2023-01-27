@@ -3,7 +3,6 @@ title: "Bladder"
 output: html_document
 date: "2022-12-28"
 ---
-
 ```{r}
 curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
 # renv::restore()
@@ -129,12 +128,14 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 # マウス
 Mm_seurat.picked <- picked_gene_list(Mm_seurat, Mm_cell, "Mm")
 Mm_seurat.picked.markers <- find_merker(Mm_seurat.picked, "Mm")
+add_cell_ontology(Mm_seurat.picked) -> Mm_seurat.picked@meta.data
 paste(outdir, "/RDS/Mm_", input, "picked.rds", sep = "") %>%
   saveRDS(Mm_seurat.picked, file = .)
 
 # ヒト
 Hs_seurat.picked <- picked_gene_list(Hs_seurat, Hs_cell, "Hs")
 Hs_seurat.picked.markers <- find_merker(Hs_seurat.picked, "Hs")
+add_cell_ontology(Hs_seurat.picked) -> Hs_seurat.picked@meta.data
 paste(outdir, "/RDS/Hs_", input, "picked.rds", sep = "") %>%
   saveRDS(Hs_seurat.picked, file = .)
 ```
@@ -284,8 +285,8 @@ seurat.only.sum.meta %>%
   mutate(short.term = make_term_short(customclassif))%>%
   inner_join(seurat.all.sum.meta,
              by = c("cell", "nCount_RNA", "nFeature_RNA", "nFeature_SCT",
-                    "SP", "integrated_seurat_cluster", "cell_ontology_class.x",
-                    "cell_ontology_class.y", "customclassif", "nCount_SCT")) %>%
+                    "SP", "integrated_seurat_cluster",
+                    "cell_ontology_class", "customclassif", "nCount_SCT")) %>%
   mutate(ratio = SUM.x / SUM.y) %>%
   ggplot(aes(x = short.term, y = ratio, fill = short.term)) +
       geom_violin() +
@@ -314,4 +315,5 @@ paste(outdir,  "/Figure/Hs_Mm_", input,
       ".seurat_integrate.celltype_pick.only_gene_ratio.png", sep = "") %>%
   ggsave(integrated_figure.ratio, width = 12, height = 20)
 ```
+
 

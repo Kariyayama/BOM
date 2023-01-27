@@ -1,7 +1,7 @@
 ---
-title: "Spleen"
+title: "Large_intestine"
 output: html_document
-date: "2022-12-23"
+date: "2022-12-22"
 ---
 細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
 ```{r}
@@ -18,7 +18,7 @@ BP: GO:0008150
 MF: GO:0003674
 CC: GO:0005575
 ```{r}
-input <- "Spleen"
+input <- "Large_Intestine"
 outdir <- paste(curdir, input, sep = "/")
 ```
 

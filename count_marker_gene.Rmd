@@ -1,0 +1,121 @@
+---
+title: "count_marker_genes"
+output: html_document
+date: "2023-01-21"
+---
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+
+source(paste(curdir, "integration_analysis_function.R", sep = "/"))
+source(paste(curdir, "count_Hs_marker_gene_function.R", sep = "/"))
+source(paste(curdir, "count_Mm_marker_gene_function.R", sep = "/"))
+```
+遺伝子対応表の読み込み
+```{r}
+read_tsv("Gene_name/20230120_Hs-Mm_integrated_full.version2.tsv",
+         show_col_types = FALSE) -> homology
+```
+マーカー遺伝子のうち、対応遺伝子を抽出
+```{r}
+# annotate_Hs_marker_to_homology("Liver")
+```
+# 遺伝子数が合わないところがある。その原因を調べる
+出力ファイルを確認したところ、one2manyまたはmany2manyで関係している遺伝子の場合、マウスとの対応関係がはっきりしている場合とはっきりしていない場合(ambiguous)な場合の両方が含まれていた。
+
+
+# 全部一気にやる（ヒト）
+```{r}
+human_table <- tibble()
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine", "Liver",
+            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea")
+for(organ in organs){
+  print(organ)
+  # ヒト細胞種ラベルの用意
+  extract_cluster_label(organ, "Hs") -> Hs_cluster_label
+  # マウス細胞種ラベルの用意
+  # extract_cluster_label(organ, "Mm") -> Mm_cluster_label
+  annotate_Hs_marker_to_homology(organ) %>%
+    arrange(cluster) %>%
+    transform(cluster = as.factor(cluster)) %>%
+    inner_join(Hs_cluster_label, .,
+             by = c("integrated_seurat_cluster" = "cluster")) %>%
+    mutate(organ = organ) %>%
+    bind_rows(human_table, .) -> human_table
+}
+
+human_table %>%
+  mutate(label = make_term_short(paste(organ,
+                                       customclassif,
+                                       sep = "_"),
+                                 length = 30)) %>%
+  ggplot(aes(x=label, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+ggsave("Hs_count_shared_gene.png", p1, height = 10, width = length(organs) * 2)
+```
+
+# 全部一気にやる（マウス）
+```{r}
+mouse_table <- tibble()
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine", "Liver",
+            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea")
+for(organ in organs){
+  print(organ)
+  # マウス細胞種ラベルの用意
+  extract_cluster_label(organ, "Mm") -> Mm_cluster_label
+
+  # 遺伝子カウント
+  annotate_Mm_marker_to_homology(organ) %>%
+    arrange(cluster) %>%
+    transform(cluster = as.factor(cluster)) %>%
+    inner_join(Mm_cluster_label, .,
+             by = c("integrated_seurat_cluster" = "cluster")) %>%
+    mutate(organ = organ) %>%
+    bind_rows(mouse_table, .) -> mouse_table
+}
+
+mouse_table %>%
+  mutate(label = make_term_short(paste(organ,
+                                       customclassif,
+                                       sep = "_"),
+                                 length = 30)) %>%
+  ggplot(aes(x=label, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+ggsave("Mm_count_shared_gene.png", p1, height = 10, width = length(organs) * 2)
+```
+ヒト・マウスの統合
+```{r}
+human_table %>%
+  mutate(SP = "Hs") %>%
+  mutate(Human_cell_label = customclassif) -> human_table.merge
+human_table.merge %>%
+  select(integrated_seurat_cluster,
+         Human_cell_label,
+         organ) %>%
+  distinct %>%
+  inner_join(mouse_table,
+             by = c("integrated_seurat_cluster", "organ")) %>%
+  mutate(SP = "Mm") -> mouse_table.merge
+
+bind_rows(human_table.merge, mouse_table.merge  ) %>%
+    mutate(label = make_term_short(paste(organ,
+                         Human_cell_label,
+                         sep = "_")), length = 25) %>%
+    ggplot(aes(x=label, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    facet_grid(SP ~ ., drop = T, scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p3
+ggsave("count_shared_gene.png", p3, height = 10, width = length(organs) * 2)
+```
+
