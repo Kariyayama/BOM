@@ -38,7 +38,7 @@ run_GOanalysis_for_a_ident <- function(marker, sp, label, ident, taxon.id){
 }
 
 # マーカー遺伝子情報を読み込み
-read_marker_gene_list <- function(sp, target = "_"){
+read_marker_gene_list <- function(sp, input, target = "_"){
     paste(outdir, "/Marker_gene/", sp, "_", input,
         ".seurat_integrate.celltype_pick",
         target, "markergene.tsv", sep = "") %>%
@@ -46,12 +46,13 @@ read_marker_gene_list <- function(sp, target = "_"){
 }
 
 # GO解析を特定の種全体に行う
-run_GOanalysis_for_all_ident <- function(sp, taxon.id, cluster_list){
+run_GOanalysis_for_all_ident <- function(sp, input = input,
+                                         taxon.id, cluster_list){
   # マーカー検出結果の取得
   paste(".", sp, "_only.", sep = "") %>%
-      read_marker_gene_list(sp, .) -> only.marker
+      read_marker_gene_list(sp, input, .) -> only.marker
   paste(".", sp, "_ortholog.", sep = "") %>%
-      read_marker_gene_list(sp, .)-> ortholog.marker
+      read_marker_gene_list(sp, input, .)-> ortholog.marker
 
   for(cluster.id in cluster_list){
     print(cluster.id)
