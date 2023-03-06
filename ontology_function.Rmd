@@ -1,0 +1,346 @@
+---
+title: "ontology_function"
+output: html_document
+date: "2023-02-21"
+---
+ライブラリ
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+library(ontoProc)
+library(ontologyPlot)
+library(Seurat)
+# library(BiocStyle)  # for package references
+```
+統合がうまく行っているか？
+```{r}
+integration <- tibble(organ = c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney",
+                                      "Large_Intestine", "Liver", "Lung", "Muscle",
+                                      "Pancrease", "Skin", "Spleen", "Thymus", "Trachea"),
+                      integration = c("Bad", "Good", "Good", "Good", "Bad", "Bad", "Good",
+                                      "Good", "Bad", "Good", "Bad", "Bad", "Bad", "Good"))
+```
+オントロジーの読み込み
+```{r}
+hdo_2022_09 <- readRDS("../../Ontology/hdo.rds")
+# DO Name
+tibble(DO_ID = names(hdo_2022_09$name),
+       DO_name = unlist(hdo_2022_09$name)) -> DO_name
+# DO define
+tibble(DO_ID = names(hdo_2022_09$def),
+       DO_def = as.character(unlist(hdo_2022_09$def))) -> DO_def
+# DO depth
+do_depth <- read_tsv("Disease_ontology/do_is_a_table.tsv",
+                     show_col_types = FALSE)
+```
+特定の階層のDOにまとめる
+```{r}
+extract_layer_data <- function(x_disease, n = 3){
+  do_depth %>%
+    filter(DO_depth == "DOID:225") %>%
+    dplyr::select(DO_ID) %>%
+    distinct -> syndrome
+  
+  # 特定の階層のDOを抽出
+  do_depth %>%
+    anti_join(syndrome, by = "DO_ID") %>%
+    distinct %>%
+    filter(depth == n) -> hs_mm_threshold
+  
+  # 特定の階層のDOの情報を付加、cell labelを分解
+  hs_mm_threshold %>%
+      select(DO_ID, Main_name, DO_depth, Depth_name) %>%
+      inner_join(x_disease, ., by = c("DO_Disease_ID" = "DO_ID")) %>%
+      mutate(cell_ontology_class = str_split(customclassif, "_",
+                                             simplify = T)[,2]) %>%
+      mutate(cell_ontology_label = paste(cell_ontology_class, cell_label,
+                                         sep = "_")) 
+}
+```
+含まれているDO数を上位のDOごとにカウントする
+```{r}
+count_do_hierarchy <- function(x_disease){
+    x_disease %>%
+      dplyr::select("Gene_name", "organ", "Homology_type", "DO_depth",
+                    "Depth_name", "share", "cell_ontology_label") %>%
+      distinct %>%
+      dplyr::select(organ) %>% 
+      distinct() %>%
+      unlist %>%
+      as.character -> organs
+    
+    do_count_table <- c()
+    for(target in organs){
+      x_disease %>%
+        filter(organ == target) %>%
+        group_by(Depth_name, share) %>%
+        dplyr::count(cell_ontology_label) %>%
+        bind_rows(do_count_table, .) -> do_count_table
+    }
+    return(do_count_table)
+}
+```
+
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.layer <- extract_layer_data(hs_mm_marker_disease.selected, n=3)
+hs_mm_marker_disease.layer %>%
+  count_do_hierarchy -> hs_mm_marker_disease.hierl
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg.layer <- extract_layer_data(hs_mm_marker_disease.different_bg.selected, n=3)
+hs_mm_marker_disease.different_bg.layer %>%
+  count_do_hierarchy -> hs_mm_marker_disease.different_bg.hierl
+# ヒトのみ
+hs_only_marker_disease.layer <- extract_layer_data(hs_only_marker_disease.selected, n=3)
+hs_only_marker_disease.layer %>%
+  count_do_hierarchy -> hs_only_marker_disease.hierl
+# 全ヒト
+hs_marker_disease.layer <- extract_layer_data(hs_marker_disease.selected, n=3)
+hs_marker_disease.layer %>%
+  count_do_hierarchy -> hs_marker_disease.hierl
+```
+```{r}
+plot_disease_count <- function(x_disease){
+ x_disease %>%
+    mutate(organ          = str_split(cell_ontology_label,
+                                      pattern = "_", simplify = TRUE)[,2],
+           ontology       = str_split(cell_ontology_label,
+                                      pattern = "_", simplify = TRUE)[,1],
+           ontology_label = paste(str_split(cell_ontology_label,
+                                            pattern = "_", simplify = TRUE)[,1],
+                                  str_split(cell_ontology_label,
+                                            pattern = "_", simplify = TRUE)[,3],
+                                  sep = "_")) %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(y = type, x = n, fill = share)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(large_summarized_class ~ Depth_name,
+               scale = "free_y", space = "free_y",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom") +
+    NoLegend()
+}
+```
+各DO:IDグループごとに、Hs_onlyとsharedの遺伝子数をカウントする
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.hierl %>%
+  mutate(type = "human-mouse") -> hs_mm_marker_disease.hierl.count
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg.hierl %>%
+  mutate(type = "human-mouse.different") -> hs_mm_marker_disease.different_bg.hierl.count
+# ヒトのみ
+hs_only_marker_disease.hierl %>%
+  mutate(type = "human only") -> hs_only_marker_disease.hierl.count
+bind_rows(hs_mm_marker_disease.hierl.count,
+          hs_mm_marker_disease.different_bg.hierl.count,
+          hs_only_marker_disease.hierl.count) %>%
+  plot_disease_count -> p4
+ggsave("count_hs_do.png", p4, width = 20, height = 15)
+```
+# 大きく分類した
+```{r}
+plot_disease_hieral <- function(x_disease_hierl){
+  x_disease_hierl  %>%
+    mutate(organ = str_split(cell_ontology_label,
+                             pattern = "_", simplify = TRUE)[,2],
+           ontology = str_split(cell_ontology_label,
+                                pattern = "_", simplify = TRUE)[,1],
+           ontology_label = paste(str_split(cell_ontology_label,
+                                            pattern = "_", simplify = TRUE)[,1],
+                                  str_split(cell_ontology_label,
+                                            pattern = "_", simplify = TRUE)[,3],
+                                  sep = "_")) %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+    ungroup() %>%
+    group_by(cell_ontology_label) %>%
+    tidyr::complete(Depth_name, share, organ,
+                    ontology_label, ontology,
+                    large_summarized_class, summarized_class) %>%
+    mutate(n = replace_na(n, 0)) %>%
+    ggplot(aes(x = reorder(summarized_class, n), y = n, fill = share)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(Depth_name ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom") +
+    NoLegend()
+}
+plot_disease_organ_hieral <- function(x_disease_hierl, target = "shared"){
+  x_disease_hierl %>%
+    filter(share == target) %>%
+    mutate(organ = str_split(cell_ontology_label,
+                             pattern = "_", simplify = TRUE)[,2],
+           ontology = str_split(cell_ontology_label,
+                                      pattern = "_", simplify = TRUE)[,1],
+           ontology_label = paste(str_split(cell_ontology_label,
+                                      pattern = "_", simplify = TRUE)[,1],
+                            str_split(cell_ontology_label,
+                                      pattern = "_", simplify = TRUE)[,3],
+                            sep = "_")) %>%
+      inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+      ungroup() %>%
+      group_by(cell_ontology_label) %>%
+      ggplot(aes(x = reorder(summarized_class, n), y = n, fill = organ)) +
+          geom_bar(stat = "identity") +
+          facet_grid(Depth_name ~ large_summarized_class,
+                     scale = "free_x", space = "free_x",
+                     labeller = label_wrap_gen(5)) +
+          theme_bw() +
+          theme(axis.text.x =
+                    element_text(angle = 90, hjust = 1, vjust = 0.5),
+                legend.position = "bottom") +
+          NoLegend()
+}
+plot_disease_organ_both <- function(x_disease_hierl){
+  x_disease_hierl %>%
+      plot_disease_organ_hieral -> p1
+  x_disease_hierl %>%
+      plot_disease_organ_hieral(target = "Hs_only") -> p2
+  p1 + ggtitle("Shared") | p2 + ggtitle("Hs_only") -> p3
+  return(p3)
+}
+```
+
+各DO:IDグループごとに、細胞種と大枠のDO:IDで分けて、Hs_onlyとsharedの遺伝子数をカウントする。 
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.hierl %>%
+  plot_disease_hieral -> p1
+ggsave("hs_mm_marker_disease.png", p1, width = 15, height = 25)
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg.hierl %>%
+  plot_disease_hieral -> p2
+ggsave("hs_mm_marker_disease_different_bg.png", p2, width = 15, height = 25)
+# ヒトのみ
+hs_only_marker_disease.hierl %>%
+  plot_disease_hieral -> p3
+ggsave("hs_only_marker_disease.png", p3, width = 15, height = 25)
+```
+
+各DO:IDグループごとに、細胞種と大枠のDO:IDで分けて、Hs_onlyとsharedの遺伝子数をカウントする。色は元になった器官で分けた
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.hierl %>%
+  plot_disease_organ_both -> p3
+ggsave("hs_mm_marker_disease.organ.png", p3, width = 30, height = 25)
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg.hierl %>%
+  plot_disease_organ_both -> p3
+ggsave("hs_mm_marker_disease_different_bg.organ.png", p3, width = 30, height = 25)
+# ヒトのみ
+hs_only_marker_disease.hierl %>%
+    plot_disease_organ_both -> p3
+ggsave("hs_only_marker_disease.organ.png", p3, width = 30, height = 25)
+```
+
+そもそもひとつの遺伝子がいくつの大枠のDO:IDに重なっていることがあるのか？
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.different_bg.layer %>%
+  dplyr::select(Gene_name, Depth_name) %>%
+  distinct %>% dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram() -> p1
+
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg.layer %>%
+  dplyr::select(Gene_name, Depth_name) %>%
+  distinct %>% dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(stat = "bin") -> p2
+
+# ヒトのみ
+hs_only_marker_disease.layer %>%
+  dplyr::select(Gene_name, Depth_name) %>%
+  distinct %>%
+  dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = n)) + geom_histogram() -> p3
+p1 + ggtitle("human-mouse") | p2 + ggtitle("human-mouse.different") | p3 + ggtitle("Hs_only")
+```
+遺伝子の種間対応関係ごとに病気関連細胞クラスターマーカー遺伝子をカウントしてプロット
+```{r}
+# ヒト-マウス共通
+hs_mm_marker_disease.layer %>%
+    mutate(Homology_label = paste(share, Homology_type)) %>%
+    dplyr::select(Gene_name, Homology_label, customclassif, organ) %>%
+    group_by(organ, customclassif) %>%
+    distinct %>%
+    dplyr::count(Homology_label) %>%
+    ungroup() %>%
+    mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    tidyr::complete(Homology_label, organ,
+                    ontology, customclassif) %>%
+    mutate(n = replace_na(n, 0)) %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x = ontology, y = n, fill = Homology_label)) +
+    geom_bar(stat= "identity", position = "dodge") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+
+# ひとのみ
+hs_only_marker_disease.layer %>%
+    mutate(Homology_label = paste(share, Homology_type)) %>%
+    dplyr::select(Gene_name, Homology_label, customclassif, organ) %>%
+    group_by(organ, customclassif) %>%
+    distinct %>%
+    dplyr::count(Homology_label) %>%
+    ungroup() %>%
+    mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    tidyr::complete(Homology_label, organ,
+                    ontology, customclassif) %>%
+    mutate(n = replace_na(n, 0)) %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x = ontology, y = n, fill = Homology_label)) +
+    geom_bar(stat= "identity", position = "dodge") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+
+# ヒト-マウスに共通なDOだが、遺伝子は共通ではない
+hs_mm_marker_disease.different_bg.layer %>%
+    mutate(Homology_label = paste(share, Homology_type)) %>%
+    dplyr::select(Gene_name, Homology_label, customclassif, organ) %>%
+    group_by(organ, customclassif) %>%
+    distinct %>%
+    dplyr::count(Homology_label) %>%
+    ungroup() %>%
+    mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    tidyr::complete(Homology_label, organ,
+                    ontology, customclassif) %>%
+    mutate(n = replace_na(n, 0)) %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x = ontology, y = n, fill = Homology_label)) +
+    geom_bar(stat= "identity", position = "dodge") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+
+
+
+```
+
