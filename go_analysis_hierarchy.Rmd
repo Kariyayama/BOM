@@ -1,0 +1,178 @@
+---
+title: "GO_analysis_hierarchy"
+output: html_document
+date: "2022-12-22"
+---
+細胞クラスターで特異的に発現しているヒト特異的遺伝子とマウス特異的遺伝子のGO解析
+```{r}
+library(rbioapi)
+library(tidyverse)
+library(SingleCellExperiment)
+library(gridExtra)
+library(cowplot)
+setwd("/Users/kariyayama/Labolatory/JST_Mouse_Human/Tabula/Integration")
+source("run_seurat_GO_analysis.R")
+```
+Ontologyの読み込み
+```{r}
+go_list <-  getOnto("goOnto")
+saveRDS(go_list, file = "../../Ontology/2022_10_31_go.rds")
+```
+
+GO情報を抽出
+```{r}
+# DO Name
+tibble(GO_ID = names(go_list$name),
+       GO_name = unlist(go_list$name)) -> GO_name
+# DO define
+tibble(GO_ID = names(go_list$def),
+       GO_def = as.character(unlist(go_list$def))) -> GO_def
+# DOのうち、is_aを抽出
+convert_list_to_matrix <- function(x){
+  x_name <- names(x)
+  x %>%
+    unlist %>%
+    length -> i
+  if(i > 0){
+    x %>%
+      unlist %>%
+      as.character -> x_body
+    cbind(rep(x_name, i), x_body)
+  }
+}
+# is_a
+result <- c()
+for(i in 1:length(go_list$is_a)){
+    convert_list_to_matrix(go_list$is_a[i]) %>%
+        rbind(result, .) -> result
+}
+tibble(GO_ID = result[,1],
+       Parents = result[,2]) %>% 
+  distinct -> go_parents
+
+# xref
+result <- c()
+for(i in 1:length(go_list$xref)){
+    convert_list_to_matrix(go_list$xref[i]) %>%
+        rbind(result, .) -> result
+}
+tibble(GO_ID = result[,1],
+       xref = result[,2]) %>% 
+  distinct -> go_xref
+
+```
+階層構造を用意したいGOリスト
+```{r}
+rbind(go_result_table, mm_go_result_table) %>%
+    dplyr::select(term.id) %>%
+    distinct() -> hs_mm_go
+```
+
+GOをis_aをもとに取得する
+```{r}
+hs_mm_go %>%
+    dplyr::rename(GO_ID = term.id) %>%
+    mutate(GO_ID_1 = GO_ID) %>%
+    left_join(go_parents, by = c("GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_2 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_2" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_3 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_3" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_4 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_4" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_5 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_5" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_6 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_6" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_7 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_7" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_8 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_8" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_9 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_9" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_10 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_10" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_11 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_11" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_12 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_12" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_13 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_13" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_14 = Parents) %>%
+    left_join(go_parents, by = c("GO_ID_14" = "GO_ID"),
+              multiple = "all") %>% dplyr::rename(GO_ID_15 = Parents) %>%
+    pivot_longer(cols = -c("GO_ID"),
+                 names_to = "depth",
+                 names_pattern = "GO_ID_(.*)",
+                 values_to = "GO_depth") %>%
+   filter(!is.na(GO_depth)) %>%
+    mutate(depth = as.numeric(depth)) -> go_depth
+
+# depthの表記を変更
+go_depth %>%
+  filter(GO_depth == "GO:0008150") %>%
+  dplyr::select(GO_ID, depth) %>%
+  inner_join(go_depth, ., by = "GO_ID", multiple = "all") %>%
+  mutate(depth = depth.y - depth.x + 1) %>%
+  dplyr::select(GO_ID, depth, GO_depth) -> go_depth
+
+go_depth %>% inner_join(GO_name, by = "GO_ID") %>% 
+    dplyr::rename(Main_name = GO_name) %>%
+    inner_join(GO_name, by = c("GO_depth" = "GO_ID")) %>% 
+    dplyr::rename(Depth_name = GO_name) -> go_depth
+
+write.table(go_depth, "Gene_ontology/go_is_a_table.tsv",
+            sep = "\t", quote = F, row.names = F)
+```
+
+```{r}
+# 2種両方で濃縮されているGOターム
+inner_join(hs.ident, mm.ident,
+           by = c("term.id")) %>%
+  dplyr::select(term.id) -> both_common.go
+
+# 両種の細胞種に濃縮されているGOターム
+inner_join(hs.ident, mm.ident, by = c("term.id", "group")) %>%
+  dplyr::select(term.id) -> both_common
+bind_rows(hs.ident, mm.ident) %>%
+  inner_join(both_common, by = "term.id") %>%
+  group_by(term.label) %>%
+  ggplot(aes(x = SP, y = term.label, color = group)) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+
+# 両種の細胞種に濃縮されているが対応関係が異なるGOターム
+anti_join(hs.ident, mm.ident, by = c("term.id", "group")) %>%
+  inner_join(both_common.go, by = "term.id") %>%
+  dplyr::select(term.id) -> both_differ
+bind_rows(hs.ident, mm.ident) %>%
+  inner_join(both_differ, by = "term.id") %>%
+  group_by(term.label) %>%
+  ggplot(aes(x = SP, y = term.label, color = group)) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+
+# ヒトの細胞種のみに濃縮されているGOターム
+anti_join(hs.ident, mm.ident, by = c("term.id")) %>%
+  dplyr::select(term.id) -> only_hs_go_term
+bind_rows(hs.ident, mm.ident) %>%
+  inner_join(only_hs_go_term, by = "term.id") %>%
+  group_by(term.label) %>%
+  ggplot(aes(x = SP, y = term.label, color = group)) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+
+# マウスの細胞種のみに濃縮されているGOターム
+anti_join(mm.ident, hs.ident, by = c("term.id")) %>%
+  dplyr::select(term.id) -> only_mm_go_term
+bind_rows(hs.ident, mm.ident) %>%
+  inner_join(only_mm_go_term, by = "term.id") %>%
+  group_by(term.label) %>%
+  ggplot(aes(x = SP, y = term.label, color = group)) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+```

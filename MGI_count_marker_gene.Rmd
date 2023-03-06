@@ -1,0 +1,447 @@
+---
+title: "count_MGI_data"
+output: html_document
+date: "2023-02-20"
+---
+
+```{r}
+library(RColorBrewer)
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+source("run_seurat_GO_analysis.R")
+source("count_marker_gene_GO.R")
+```
+ファイル読み込み
+```{r}
+hs_mm_marker_disease <- read_tsv("MGI_DO/hs_mm_marker_disease_human_gene.tsv",
+                                 show_col_types = FALSE)
+hs_mm_marker_disease.different_bg <- read_tsv("MGI_DO/hs_mm_marker_disease_human_gene_different_bg.tsv",
+                                              show_col_types = FALSE)
+hs_only_marker_disease <- read_tsv("MGI_DO/hs_only_marker_disease_human_gene.tsv",
+                                   show_col_types = FALSE)
+hs_marker_disease <- read_tsv("MGI_DO/hs_marker_disease_human_gene.tsv",
+                              show_col_types = FALSE)
+hs_marker_count <- read_tsv("hs_all_marker_gene_count.tsv",
+                            show_col_types = FALSE)
+cell_type_label <- read_tsv("cell_ontology_class_manual.txt",
+                            show_col_types = FALSE)
+```
+
+# メタ情報集め
+DO:IDと遺伝子の関係
+```{r}
+# あるDO:IDに対応する遺伝子の数を数える
+plot_do_per_gene <- function(x){
+  x %>%
+    select(DO_Disease_ID, Gene_name) %>%
+    distinct %>%
+    dplyr::count(DO_Disease_ID) %>%
+    ggplot(aes(x=reorder(DO_Disease_ID, n), y=n)) +
+    geom_point() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+}
+
+count_do_per_gene <- function(x){
+  x %>%
+    select(DO_Disease_ID, Gene_name) %>%
+    distinct %>%
+    dplyr::count(DO_Disease_ID) %>%
+    group_by(n) %>%
+    dplyr::count(n)
+}
+```
+
+```{r}
+# ヒト-マウス共通
+plot_do_per_gene(hs_mm_marker_disease)
+count_do_per_gene(hs_mm_marker_disease)
+
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+plot_do_per_gene(hs_mm_marker_disease.different_bg)
+count_do_per_gene(hs_mm_marker_disease.different_bg)
+
+# ヒトのみ
+plot_do_per_gene(hs_only_marker_disease)
+count_do_per_gene(hs_only_marker_disease)
+
+# 全ヒト
+plot_do_per_gene(hs_marker_disease)
+count_do_per_gene(hs_marker_disease)
+```
+
+ヒト-マウス共通：725/773のDO:IDが遺伝子と1対1で対応していた
+ヒト-マウス共通DOのうち遺伝子が異なるもの：244/517のDOが遺伝子と1対1で対応していた
+ヒトのみ：2,342/2,847のDOが遺伝子と1対1で対応していた
+
+```{r}
+# DOの絶対数
+hs_mm_marker_disease %>%
+  mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm") -> Hs_Mm.DO_marker
+hs_mm_marker_disease.different_bg %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm_different") -> Hs_Mm.DO_marker.different_bg
+hs_only_marker_disease %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_only") -> Hs_only.DO_marker
+hs_marker_disease %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_all") -> Hs.DO_marker
+
+# 細胞種ごとに計算
+bind_rows(Hs_Mm.DO_marker, Hs_Mm.DO_marker.different_bg,
+          Hs_only.DO_marker, Hs.DO_marker) %>%
+    ggplot(aes(x=cell_type_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(Hs_Mm.DO_marker, Hs_Mm.DO_marker.different_bg,
+          Hs_only.DO_marker, Hs.DO_marker)  %>%
+    mutate(organ = str_split(cell_type_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+ある遺伝子がヒト-マウス共通な細胞種マーカーになっている場合はその細胞種に関わる病気でモデルマウスが作成されているという仮定の下で2種共通マーカー遺伝子と種特異的なマーカー遺伝子の数をカウントする
+```{r}
+select_shared_only <- function(x){
+  x %>%
+    filter(share == "shared") -> x.shared
+  x.shared %>%
+    dplyr::select(Gene_name) %>%
+    anti_join(x, .,
+              by = "Gene_name") -> x.hs_only
+  bind_rows(x.shared, x.hs_only) 
+}
+  
+# ヒト-マウス共通
+hs_mm_marker_disease %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    select_shared_only -> hs_mm_marker_disease.selected
+hs_mm_marker_disease.selected %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share)%>%
+    mutate(type = "Hs_Mm") -> hs_mm_marker_disease.selected.count
+# ヒト-マウス共通DOのうち遺伝子が異なるもの
+hs_mm_marker_disease.different_bg %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    select_shared_only  -> hs_mm_marker_disease.different_bg.selected
+hs_mm_marker_disease.different_bg.selected %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share)%>%
+    mutate(type = "Hs_Mm_different") -> hs_mm_marker_disease.different_bg.selected.count
+# ヒトのみ
+hs_only_marker_disease %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    select_shared_only -> hs_only_marker_disease.selected
+hs_only_marker_disease.selected %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share)%>%
+    mutate(type = "Hs_only") -> hs_only_marker_disease.selected.count
+
+# 全ヒト
+hs_marker_disease %>%
+    mutate(cell_type_label = paste(organ, customclassif, sep = "_")) %>%
+    select_shared_only -> hs_marker_disease.selected
+hs_marker_disease.selected %>%
+    group_by(cell_type_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share)%>%
+    mutate(type = "Hs_all") -> hs_marker_disease.selected.count
+
+# 細胞種ごとに計算
+bind_rows(hs_mm_marker_disease.selected.count,
+          hs_mm_marker_disease.different_bg.selected.count,
+          hs_only_marker_disease.selected.count,
+          hs_marker_disease.selected.count) %>%
+    ggplot(aes(x=cell_type_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(hs_mm_marker_disease.selected.count,
+          hs_mm_marker_disease.different_bg.selected.count,
+          hs_only_marker_disease.selected.count,
+          hs_marker_disease.selected.count) %>%
+    mutate(organ = str_split(cell_type_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+割合・傾向はどのヒト-マウスの共通性で区切っても変わらなかった
+
+マーカー遺伝子の数に対する割合
+```{r}
+bind_rows(hs_mm_marker_disease.selected,
+          hs_mm_marker_disease.different_bg.selected,
+          hs_only_marker_disease.selected,
+          hs_marker_disease.selected) %>%
+    mutate(organ = str_split(cell_type_label, "_", simplify = TRUE)[,1],
+           cluster = str_split(cell_type_label, "_", simplify = TRUE)[,2],
+           cellclusterif = str_split(cell_type_label, "_", simplify = TRUE)[,3]) %>%
+    mutate(cell_label = paste(organ, cluster, sep = "_")) %>%
+    inner_join(hs_marker_count, by = c("cell_label", "share")) %>%
+    mutate(ratio = n.x/n.y) %>% 
+    inner_join(cell_type_label, by = c("cellclusterif" = "cell_ontology_class")) %>%
+    ggplot(aes(x=cell_type_label, y = ratio, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ summarized_class, scale = "free", space = "free_x") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+
+### Regacy ~2/20 ###
+# MGIデータに含まれる全ヒト病気関連遺伝子
+```{r}
+MGI_DO %>%
+    filter(Common_Organism_Name == "human") %>%
+    select(DO_Disease_ID, Symbol) %>%
+    distinct %>%
+    dplyr::count(DO_Disease_ID) %>%
+    group_by(n) %>%
+    dplyr::count(n)
+```
+こちらも4130/5284がDO:IDと遺伝子が1対1で対応していた
+
+遺伝子の共有関係ごとに数える
+```{r}
+hs_mm_marker_disease %>%
+    group_by(cell_label) %>%
+  dplyr::count(share) %>%
+  ggplot(aes(x=cell_label, y=n, fill=share)) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+問題点
+そもそもあるDOがその細胞型に関係してない場合、その遺伝子の共有関係がsharedにならないのは自明のはず。だから、この方法のプロットではヒト特異的マーカー遺伝子を過剰に数えてしまうことが起こっていると考えられる。
+逆にヒト-マウスで共通している遺伝子が関係するDO:IDでヒト-マウスで生物学的に異なる特徴に関わるものはあるのか？
+
+全遺伝子との比で見てみる
+```{r}
+# DOの絶対数
+hs_mm_marker_disease %>%
+    group_by(cell_label) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm") -> Hs_Mm.DO_marker
+hs_all_marker_disease %>%
+    group_by(cell_label) %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs") -> Hs_all.DO_marker
+
+# 細胞種ごとに計算
+bind_rows(Hs_Mm.DO_marker, Hs_all.DO_marker) %>%
+    ggplot(aes(x=cell_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(Hs_Mm.DO_marker, Hs_all.DO_marker) %>%
+    mutate(organ = str_split(cell_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 比
+Hs_Mm.DO_marker %>%
+  pivot_wider(id_cols=c(cell_label, type),
+              names_from = share,
+              values_from = n,
+              values_fill = 0) %>%
+  mutate(ratio = shared / (Hs_only + shared)) -> Hs_Mm.DO_marker.ratio
+Hs_all.DO_marker %>%
+  pivot_wider(id_cols=c(cell_label, type),
+              names_from = share,
+              values_from = n,
+              values_fill = 0) %>%
+  mutate(ratio = shared / (Hs_only + shared)) -> Hs_all.DO_marker.ratio
+```
+病気関連遺伝子数
+```{r}
+# DO関連遺伝子の絶対数
+hs_mm_marker_disease %>%
+    group_by(cell_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm") -> Hs_Mm.gene_marker
+hs_all_marker_disease %>%
+    group_by(cell_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs") -> Hs_all.gene_marker
+
+# 細胞種ごとに計算
+bind_rows(Hs_Mm.gene_marker, Hs_all.gene_marker) %>%
+    ggplot(aes(x=cell_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(Hs_Mm.gene_marker, Hs_all.gene_marker) %>%
+    mutate(organ = str_split(cell_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+遺伝子で数を数えてもDOで数えた場合とHs_only:sharedの比に大きな変化はなかった。
+
+Hs_MmとHs_onlyで分けてプロット（DO数）
+```{r}
+hs_mm_marker_disease %>%
+  filter(share == "shared") -> hs_mm_marker_disease.shared
+hs_mm_marker_disease.shared %>%
+  dplyr::select(Gene_name) %>%
+  anti_join(hs_mm_marker_disease, .,
+            by = "Gene_name") -> hs_mm_marker_disease.hs_only
+
+## DO数をカウント
+bind_rows(hs_mm_marker_disease.shared, hs_mm_marker_disease.hs_only) %>%
+    group_by(cell_label) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm") -> Hs_Mm.gene_marker.selected
+
+# 全ヒト病気関連遺伝子
+hs_all_marker_disease %>%
+  filter(share == "shared") -> hs_all_marker_disease.shared
+hs_all_marker_disease.shared %>%
+  dplyr::select(Gene_name) %>%
+  anti_join(hs_all_marker_disease, .,
+            by = "Gene_name") -> hs_all_marker_disease.hs_only
+
+## DO数をカウント
+bind_rows(hs_all_marker_disease.shared, hs_all_marker_disease.hs_only) %>%
+    group_by(cell_label) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs") -> Hs_all.gene_marker.selected
+
+# 細胞種ごとに計算
+bind_rows(Hs_Mm.gene_marker.selected,
+          Hs_all.gene_marker.selected) %>%
+    ggplot(aes(x=cell_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(Hs_Mm.gene_marker.selected,
+          Hs_all.gene_marker.selected) %>%
+    mutate(organ = str_split(cell_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+Hs_MmとHs_onlyで分けてプロット（遺伝子数）
+```{r}
+hs_mm_marker_disease %>%
+  filter(share == "shared") -> hs_mm_marker_disease.shared
+hs_mm_marker_disease.shared %>%
+  dplyr::select(Gene_name) %>%
+  anti_join(hs_mm_marker_disease, .,
+            by = "Gene_name") -> hs_mm_marker_disease.hs_only
+
+# DO関連遺伝子の絶対数
+bind_rows(hs_mm_marker_disease.shared, hs_mm_marker_disease.hs_only) %>%
+    group_by(cell_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs_Mm") -> Hs_Mm.gene_marker.selected
+
+# 全ヒト病気関連遺伝子
+hs_all_marker_disease %>%
+  filter(share == "shared") -> hs_all_marker_disease.shared
+hs_all_marker_disease.shared %>%
+  dplyr::select(Gene_name) %>%
+  anti_join(hs_all_marker_disease, .,
+            by = "Gene_name") -> hs_all_marker_disease.hs_only
+bind_rows(hs_all_marker_disease.shared, hs_all_marker_disease.hs_only) %>%
+    group_by(cell_label) %>%
+    dplyr::select(-c(DO_Disease_ID)) %>%
+    distinct %>%
+    dplyr::count(share) %>%
+    mutate(type = "Hs") -> Hs_all.gene_marker.selected
+
+# 細胞種ごとに計算
+bind_rows(Hs_Mm.gene_marker.selected,
+          Hs_all.gene_marker.selected) %>%
+    ggplot(aes(x=cell_label, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 組織ごとに計算
+bind_rows(Hs_Mm.gene_marker.selected,
+          Hs_all.gene_marker.selected) %>%
+    mutate(organ = str_split(cell_label, "_", simplify = TRUE)[1]) %>%
+    ggplot(aes(x=organ, y = n, fill = share)) +
+    geom_bar(stat= "identity") +
+    facet_grid(type ~ ., scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```

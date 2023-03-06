@@ -1,0 +1,46 @@
+---
+title: "iDEA"
+output: html_document
+date: "2023-02-13"
+---
+ワーキングディレクトリを設定
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+```
+
+
+```{r}
+# install devtools if necessary
+install.packages('devtools')
+
+# install the iDEA package
+devtools::install_github('xzhoulab/iDEA')
+
+# load package
+library(iDEA)
+```
+Input
+1. gene-level summary statistics, in terms of fold change/effect size estimates and their variance
+2. gene specific annotation from publich databases 
+
+## Summary statistics, e.g.
+row names: gene name
+column names: coefficient, variance of the coefficient (LogFC)
+```{r}
+# Calculate standard error from the p-value and beta coefficient
+## Assume you have obtained the DE results from i.e. zingeR, edgeR or MAST with the data frame res_DE (column: pvalue and LogFC)
+pvalue <- res_DE$pvalue #### the pvalue column
+zscore <- qnorm(pvalue/2.0, lower.tail=FALSE) #### convert the pvalue to z-score
+beta <- res_DE$LogFC ## effect size
+se_beta <- abs(beta/zscore) ## to approximate the standard error of beta
+beta_var = se_beta^2  ### square 
+summary = data.frame(beta = beta,beta_var = beta_var)
+## add the gene names as the rownames of summary
+rownames(summary) = rownames(res_DE) ### or the gene id column in the res_DE results
+```
+

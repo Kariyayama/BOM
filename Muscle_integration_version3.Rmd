@@ -1,7 +1,7 @@
 ---
-title: "Bone_Marrow"
+title: "Muscle"
 output: html_document
-date: "2022-12-28"
+date: "2023-01-30"
 ---
 ```{r}
 curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
@@ -22,7 +22,7 @@ source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 解析に使う組織の選択
 ```{r}
 set.seed(12345)
-input <- "Bone_Marrow"
+input <- "Muscle"
 outdir <- paste(curdir, input, sep = "/")
 ```
 
@@ -40,27 +40,6 @@ Mm_cell <- celltype_pick(Mm_seurat)
 Mm_seurat %>%
   extract_one2one_cell(Mm_cell, "Mouse_gene_name") -> Mm_seurat.one2one.table
 ```
-ポスター用に図を作成
-```{r}
-# ヒト
-readRDS(file=paste(outdir, "/TS_", input, ".rds", sep = "")) %>%
-  SCTransform(variable.features.n = 2000) %>%
-  RunPCA() -> Hs_seurat
-ElbowPlot(object = Hs_seurat, ndims = 50)
-Hs_seurat <- RunUMAP(Hs_seurat, dims = 1:22)
-
-DimPlot(Hs_seurat, group.by = "cell_ontology_class")
-
-# マウス
-readRDS(file=paste(outdir, "/TM_", input, ".rds", sep = "")) %>%
-  SCTransform(variable.features.n = 2000) %>%
-  RunPCA() -> Mm_seurat
-ElbowPlot(object = Mm_seurat, ndims = 50)
-Mm_seurat <- RunUMAP(Mm_seurat, dims = 1:22)
-
-DimPlot(Mm_seurat, group.by = "cell_ontology_class") 
-```
-
 
 遺伝子選択
 ```{r}
@@ -107,7 +86,7 @@ ElbowPlot(object = Hs_Mm.seurat.combined, ndims = 50)
 
 UMAP＋可視化
 ```{r}
-npcs <- 22
+npcs <- 25
 Hs_Mm.seurat.combined <- FindNeighbors(Hs_Mm.seurat.combined,
                                        reduction = "pca", dims = 1:npcs)
 Hs_Mm.seurat.combined <- FindClusters(Hs_Mm.seurat.combined,
@@ -307,6 +286,5 @@ paste(outdir,  "/Figure/Hs_Mm_", input,
       ".seurat_integrate.celltype_pick.only_gene_ratio.png", sep = "") %>%
   ggsave(integrated_figure.ratio, width = 12, height = 20)
 ```
-
 
 

@@ -3,12 +3,15 @@ title: "count_marker_genes"
 output: html_document
 date: "2023-01-21"
 ---
+ライブラリ読み込み
 ```{r}
 curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
 # renv::restore()
 setwd(curdir)
 library(here)
 set_here(curdir)
+read_tsv("cell_ontology_class_manual.txt",
+         show_col_types = FALSE) -> cell_type_label
 
 source(paste(curdir, "integration_analysis_function.R", sep = "/"))
 source(paste(curdir, "count_Hs_marker_gene_function.R", sep = "/"))
@@ -26,12 +29,20 @@ read_tsv("Gene_name/20230120_Hs-Mm_integrated_full.version2.tsv",
 # 遺伝子数が合わないところがある。その原因を調べる
 出力ファイルを確認したところ、one2manyまたはmany2manyで関係している遺伝子の場合、マウスとの対応関係がはっきりしている場合とはっきりしていない場合(ambiguous)な場合の両方が含まれていた。
 
+メタ情報：統合がうまく行っているか？
+```{r}
+integration <- tibble(organ = c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney",
+                                      "Large_Intestine", "Liver", "Lung", "Muscle",
+                                      "Pancrease", "Skin", "Spleen", "Thymus", "Trachea"),
+                      integration = c("Bad", "Good", "Good", "Good", "Bad", "Bad", "Good",
+                                      "Good", "Bad", "Good", "Bad", "Bad", "Bad", "Good"))
+```
 
 # 全部一気にやる（ヒト）
 ```{r}
 human_table <- tibble()
-organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine", "Liver",
-            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea")
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine",
+            "Liver", "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea", "Muscle")
 for(organ in organs){
   print(organ)
   # ヒト細胞種ラベルの用意
@@ -59,12 +70,397 @@ human_table %>%
               element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
 ggsave("Hs_count_shared_gene.png", p1, height = 10, width = length(organs) * 2)
 ```
+---3/1---
+# 全部一気にやる（マウス）
+```{r}
+mouse_table <- tibble()
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine",
+            "Liver", "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea", "Muscle")
+for(organ in organs){
+  print(organ)
+  # ヒト細胞種ラベルの用意
+  extract_cluster_label(organ, "Mm") -> Mm_cluster_label
+  # マウス細胞種ラベルの用意
+  # extract_cluster_label(organ, "Mm") -> Mm_cluster_label
+  annotate_Mm_marker_to_homology(organ) %>%
+    arrange(cluster) %>%
+    transform(cluster = as.factor(cluster)) %>%
+    inner_join(Mm_cluster_label, .,
+             by = c("integrated_seurat_cluster" = "cluster")) %>%
+    mutate(organ = organ) %>%
+    bind_rows(mouse_table, .) -> mouse_table
+}
+
+mouse_table %>%
+  mutate(label = make_term_short(paste(organ,
+                                       customclassif,
+                                       sep = "_"),
+                                 length = 30)) %>%
+  ggplot(aes(x=label, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+ggsave("Mm_count_shared_gene.png", p1, height = 10, width = length(organs) * 2)
+```
+
+---2023/2/24---
+マーカー遺伝子の数を対応関係ごとにカウント（ヒト）
+```{r}
+human_table %>%
+    mutate(label = make_term_short(paste(organ,
+                                         customclassif,
+                                         sep = "_"),
+                                   length = 30),
+           ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    inner_join(cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x=ontology, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+```
+---3/1---
+マーカー遺伝子の数を対応関係ごとにカウント（マウス）
+```{r}
+mm_cell_type_label <- read_tsv("mm_cell_ontology_class_manual.txt",
+                               show_col_types = FALSE)
+mouse_table %>%
+    mutate(label = make_term_short(paste(organ,
+                                         customclassif,
+                                         sep = "_"),
+                                   length = 30),
+           ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    inner_join(mm_cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    mutate(ontology = make_term_short(ontlogy, 30)) %>%
+    ggplot(aes(x=ontology, y = n, fill = type)) +
+    geom_bar(stat = "identity") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+```
+
+細胞種ラベル情報（ヒト・マウス）
+```{r}
+# ヒト
+hs_marker %>%
+    dplyr::select(organ, customclassif, cluster) %>%
+    mutate(cell_label = paste(organ, cluster, sep = "_"),
+           ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    distinct %>%
+    inner_join(cell_type_label, by = c(ontology = "cell_ontology_class")) -> cell_type_ontology
+# 2023/3/1: マウス
+mm_marker %>%
+    dplyr::select(organ, customclassif, cluster) %>%
+    mutate(cell_label = paste(organ, cluster, sep = "_"),
+           ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+    distinct %>%
+    inner_join(mm_cell_type_label, by = c(ontology = "cell_ontology_class")) -> mm_cell_type_ontology
+```
+
+merge_MGI_data.Rmdの冒頭で行ったマーカー遺伝子一覧データフレームの作成
+マーカー遺伝子の取得・結合させた表を作成
+```{r}
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine",
+            "Liver", "Lung", "Muscle", "Pancreas", "Skin", "Spleen",
+            "Thymus", "Trachea")
+hs_marker <- tibble()
+for(input in organs){
+    outdir <- paste(curdir, input, sep = "/")
+    extract_cluster_label(input, "Hs") -> Hs_cluster_label
+    read_marker_gene_list("Hs", input, "_") %>%
+      select(cluster) %>%
+      distinct %>%
+      unlist %>%
+      as.numeric -> Hs_all
+    for(clstr in Hs_all){
+        paste(outdir, "/Marker_gene/",
+              "Hs_Mm_", input,
+              ".seurat_integrate.cluster_", clstr, ".homology.tsv",
+              sep = "") %>%
+          read_tsv(show_col_types = FALSE) -> marker
+        marker %>%
+          mutate(organ = input) %>%
+          transform(cluster = as.factor(cluster))%>%
+          inner_join(Hs_cluster_label,
+                     by = c("cluster" = "integrated_seurat_cluster")) %>% 
+          bind_rows(hs_marker, .) -> hs_marker
+    }
+}
+write.table(hs_marker, "hs_all_marker_gene.tsv",
+            quote = F, sep = "\t", row.names = F)
+hs_marker <- read_tsv("hs_all_marker_gene.tsv", show_col_types = FALSE)
+
+# CCS遺伝子数
+hs_marker %>%
+    mutate(cell_label = paste(organ, cluster,
+                              sep = "_")) %>%
+    dplyr::select(Gene_stable_ID, cell_label) %>%
+    distinct %>%
+    dplyr::count(cell_label) -> hs_marker_count
+
+# CCS遺伝子の数を細胞種と2種間の共通性ごとにカウント
+hs_marker %>%
+    mutate(cell_label = paste(organ, cluster,
+                              sep = "_")) %>%
+    group_by(cell_label) %>%
+    dplyr::select(Gene_stable_ID, cell_label, share) %>%
+    distinct %>%
+    dplyr::count(share) -> hs_marker_count.share
+write.table(hs_marker_count, "hs_all_marker_gene_count.tsv",
+            quote = F, sep = "\t", row.names = F)
+```
+---2023/3/1---
+マウスも同様に、マーカー遺伝子の取得・結合させた表を作成
+merge_MGI_data.Rmdの冒頭で行ったマーカー遺伝子一覧データフレームの作成
+マーカー遺伝子の取得・結合させた表を作成
+```{r}
+mm_marker <- tibble()
+for(input in organs){
+    outdir <- paste(curdir, input, sep = "/")
+    extract_cluster_label(input, "Mm") -> Mm_cluster_label
+    read_marker_gene_list("Mm", input, "_") %>%
+      select(cluster) %>%
+      distinct %>%
+      unlist %>%
+      as.numeric -> Mm_all
+    for(clstr in Mm_all){
+        paste(outdir, "/Marker_gene/",
+              "Mm_Hs_", input,
+              ".seurat_integrate.cluster_", clstr, ".homology.tsv",
+              sep = "") %>%
+          read_tsv(show_col_types = FALSE) -> marker
+        marker %>%
+          mutate(organ = input) %>%
+          transform(cluster = as.factor(cluster))%>%
+          inner_join(Mm_cluster_label,
+                     by = c("cluster" = "integrated_seurat_cluster")) %>% 
+          bind_rows(mm_marker, .) -> mm_marker
+    }
+}
+write.table(mm_marker, "mm_all_marker_gene.tsv",
+            quote = F, sep = "\t", row.names = F)
+mm_marker <- read_tsv("mm_all_marker_gene.tsv", show_col_types = FALSE)
+
+# CCS遺伝子数
+mm_marker %>%
+    mutate(cell_label = paste(organ, cluster, sep = "_")) %>%
+    dplyr::select(Gene_stable_ID, cell_label) %>%
+    distinct %>%
+    dplyr::count(cell_label) -> mm_marker_count
+
+# CCS遺伝子の数を細胞種と2種間の共通性ごとにカウント
+mm_marker %>%
+    mutate(cell_label = paste(organ, cluster, sep = "_")) %>%
+    group_by(cell_label) %>%
+    dplyr::select(Gene_stable_ID, cell_label, share) %>%
+    distinct %>%
+    dplyr::count(share) -> mm_marker_count.share
+write.table(mm_marker_count, "mm_all_marker_gene_count.tsv",
+            quote = F, sep = "\t", row.names = F)
+```
+
+---2023/2/27---
+CCS遺伝子に占める系統特異的な遺伝子の割合が高い細胞種を探索（ヒト）
+```{r}
+hs_marker_count %>%
+    inner_join(cell_type_ontology, by = "cell_label") %>%
+    inner_join(human_table, .,
+               by = c("organ", "integrated_seurat_cluster" = "cluster",
+                      "customclassif")) %>%
+    inner_join(integration, by = "organ") %>%
+    mutate(ratio = n.x/n.y) %>%
+    arrange(desc(ratio)) %>%
+    filter(Homology_type == "Hs_SS") %>%
+    dplyr::select(customclassif, ontology, cell_type_label, organ,
+                  integration, n.x, n.y, ratio) %>%
+    mutate(label = make_term_short(cell_type_label, length = 30)) %>%
+    inner_join(cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    mutate(label = make_term_short(paste(customclassif,
+                                         organ,
+                                         sep = "_"),
+                                   length = 30)) -> human_CCS_gene_ratio
+
+# 統合がうまくいっている器官
+human_CCS_gene_ratio %>%
+    filter(integration == "Good") %>% 
+    mutate(score = ratio * n.x) %>%
+    ggplot(aes(x = reorder(label, score), y = score,
+               fill = organ)) +
+    geom_bar(stat = "identity") +
+    facet_grid(large_summarized_class ~ .,
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> good_count
+
+# 統合がうまくいっていない器官
+human_CCS_gene_ratio %>%
+    filter(integration == "Bad") %>% 
+    mutate(score = ratio * n.x) %>%
+    ggplot(aes(x = reorder(label, score), y = score,
+               fill = organ)) +
+    geom_bar(stat = "identity") +
+    facet_grid(large_summarized_class ~ .,
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> bad_count
+ggsave("Marker_gene/Hs_SS_gene_ratio_among_good_integration_score.png", good_count,
+       height = 10, width = 14)
+ggsave("Marker_gene/Hs_SS_gene_ratio_among_bad_integration_score.png", bad_count,
+       height = 10, width = 14)
+good_count
+bad_count
+```
+---2023/3/1---
+CCS遺伝子に占める系統特異的な遺伝子の割合が高い細胞種を探索（マウス）
+```{r}
+mm_marker_count %>%
+    inner_join(mm_cell_type_ontology, by = "cell_label") %>%
+    mutate(cluster = factor(cluster)) %>%
+    inner_join(mouse_table, .,
+               by = c("organ", "integrated_seurat_cluster" = "cluster",
+                      "customclassif")) %>%
+    inner_join(integration, by = "organ") %>%
+    mutate(ratio = n.x/n.y,
+           cell_type_label = paste(customclassif, organ, sep = "_")) %>%
+    arrange(desc(ratio)) %>%
+    filter(Homology_type == "Mm_SS") %>%
+    dplyr::select(customclassif, ontology, cell_type_label, organ,
+                  integration, n.x, n.y, ratio) %>%
+    mutate(label = make_term_short(cell_type_label, length = 30)) %>%
+    inner_join(mm_cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    mutate(label = make_term_short(paste(customclassif,
+                                         organ,
+                                         sep = "_"),
+                                   length = 30)) -> mouse_CCS_gene_ratio
+
+# 統合がうまくいっている器官
+mouse_CCS_gene_ratio %>%
+    filter(integration == "Good") %>% 
+    mutate(score = ratio * n.x) %>%
+    ggplot(aes(x = reorder(label, score), y = score,
+               fill = organ)) +
+    geom_bar(stat = "identity") +
+    facet_grid(large_summarized_class ~ .,
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> mm_good_count
+
+# 統合がうまくいっていない器官
+mouse_CCS_gene_ratio %>%
+    filter(integration == "Bad") %>% 
+    mutate(score = ratio * n.x) %>%
+    ggplot(aes(x = reorder(label, score), y = score,
+               fill = organ)) +
+    geom_bar(stat = "identity") +
+    facet_grid(large_summarized_class ~ .,
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> mm_bad_count
+ggsave("Marker_gene/Mm_SS_gene_ratio_among_good_integration_score.png", mm_good_count,
+       height = 10, width = 14)
+ggsave("Marker_gene/Mm_SS_gene_ratio_among_bad_integration_score.png", mm_bad_count,
+       height = 10, width = 14)
+mm_good_count
+mm_bad_count
+```
+
+---2023/2/27---
+器官ごとにマーカー遺伝子の数を対応関係ごとにカウント（ヒト）
+```{r}
+homology <- tibble(Homology_type = c("Hs_SS", "ortholog_one2one",
+                                     "ortholog_one2many", "ortholog_many2many"))
+for(target in organs){
+  human_table %>%
+      inner_join(homology, by = "Homology_type") %>%
+      filter(organ == target)  %>%
+      dplyr::select(customclassif, share, Homology_type, n, organ) %>%
+      tidyr::complete(customclassif, share, Homology_type, organ) %>%
+      mutate(n = replace_na(n, 0)) %>%
+      mutate(label = make_term_short(customclassif, length = 30),
+             ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+      inner_join(cell_type_label,
+                 by = c(ontology = "cell_ontology_class")) -> organ_table
+  organ_table %>%
+      ggplot(aes(x=label, y = n, fill = Homology_type)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x =
+                element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+      facet_grid(share ~ large_summarized_class,
+                 scale = "free_x", space = "free_x",
+                 labeller = label_wrap_gen(5)) + 
+      ggtitle(target) -> p1
+  width_data <- organ_table %>%
+    dplyr::select(customclassif) %>%
+    distinct %>%
+    dim
+  paste("Hs_count", target, "marker_gene_homology.png", sep = "_") %>%
+    paste(curdir, target, "Figure", ., sep = "/") %>%
+  ggsave(p1, height = 7, width = width_data[1] * 0.5 + 2)
+}
+
+```
+
+---2023/3/1---
+器官ごとにマーカー遺伝子の数を対応関係ごとにカウント（マウス）
+```{r}
+homology <- tibble(Homology_type = c("Mm_SS", "ortholog_one2one",
+                                     "ortholog_one2many", "ortholog_many2many"))
+for(target in organs){
+  mouse_table %>%
+      inner_join(homology, by = "Homology_type") %>%
+      filter(organ == target)  %>%
+      dplyr::select(customclassif, share, Homology_type, n, organ) %>%
+      tidyr::complete(customclassif, share, Homology_type, organ) %>%
+      mutate(n = replace_na(n, 0)) %>%
+      mutate(label = make_term_short(customclassif, length = 30),
+             ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+      inner_join(mm_cell_type_label,
+                 by = c(ontology = "cell_ontology_class")) -> mm_organ_table
+  mm_organ_table %>%
+      ggplot(aes(x=label, y = n, fill = Homology_type)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x =
+                element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+      facet_grid(share ~ large_summarized_class,
+                 scale = "free_x", space = "free_x",
+                 labeller = label_wrap_gen(5)) + 
+      ggtitle(target) -> p1
+  width_data <- mm_organ_table %>%
+    dplyr::select(customclassif) %>%
+    distinct %>%
+    dim
+  paste("Mm_count", target, "marker_gene_homology.png", sep = "_") %>%
+    paste(curdir, target, "Figure", ., sep = "/") %>%
+  ggsave(p1, height = 7, width = width_data[1] * 0.5 + 2)
+}
+
+```
+---ここまで---
 
 # 全部一気にやる（マウス）
 ```{r}
 mouse_table <- tibble()
 organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine", "Liver",
-            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea")
+            "Lung", "Pancreas", "Skin", "Spleen", "Thymus", "Trachea", "Muscle")
 for(organ in organs){
   print(organ)
   # マウス細胞種ラベルの用意
@@ -119,3 +515,252 @@ bind_rows(human_table.merge, mouse_table.merge  ) %>%
 ggsave("count_shared_gene.png", p3, height = 10, width = length(organs) * 2)
 ```
 
+細胞数をカウントする
+```{r}
+count_cells <- function(input, sp){
+  paste(input, "/RDS/", sp, "_", input, "picked.rds", sep = "") %>%
+      readRDS() -> seurat.picked
+  seurat.picked@meta.data %>%
+      rownames_to_column(var = "cell")  %>%
+      select(integrated_seurat_cluster, customclassif, cell) %>%
+      group_by(customclassif) %>%
+      dplyr::count(customclassif, integrated_seurat_cluster) %>%
+      arrange(integrated_seurat_cluster) %>%
+      mutate(organ = input) %>%
+      mutate(label = make_term_short(paste(organ, customclassif,
+                                           sep = "_"), length = 30))
+}
+```
+器官・細胞種ごとに細胞数をカウント
+```{r}
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney",
+            "Large_Intestine", "Liver", "Lung", "Pancreas", "Skin",
+            "Spleen", "Thymus", "Trachea", "Muscle")
+Hs_cells <- tibble()
+Mm_cells <- tibble()
+for(organ in organs){
+  Hs_cells <- bind_rows(Hs_cells, count_cells(organ, "Hs"))
+  Mm_cells <- bind_rows(Mm_cells, count_cells(organ, "Mm"))
+}
+```
+
+# 2023/2/24: 各細胞種の細胞数をプロットする
+```{r}
+Hs_cells %>%
+  dplyr::rename(cluster = integrated_seurat_cluster) %>%
+  mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  inner_join(cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x=ontology, y = n)) +
+    geom_bar(stat = "identity") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+```
+
+マウスの細胞数もカウント
+```{r}
+# 細胞種ラベルを作成
+Mm_cells %>%
+  mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  dplyr::select(ontology) %>%
+  mutate(large_summarized_class = "", summarized_class = "") %>%
+  write.table("mm_cell_ontology_class.txt", sep = "\t", quote = F, row.names = F)
+# 細胞種ラベルを読み込み
+read_tsv("mm_cell_ontology_class_manual.txt",
+         show_col_types = FALSE) -> mm_cell_type_label
+
+Mm_cells %>%
+  dplyr::rename(cluster = integrated_seurat_cluster) %>%
+  mutate(ontology = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  inner_join(mm_cell_type_label,
+               by = c(ontology = "cell_ontology_class")) %>%
+    ggplot(aes(x=ontology, y = n)) +
+    geom_bar(stat = "identity") +
+    facet_grid(organ ~ large_summarized_class,
+               scale = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+```
+
+2種間を統合してプロット
+```{r}
+bind_rows(Hs_cells, Mm_cells) %>%
+    dplyr::select(integrated_seurat_cluster, organ, SP, n) %>%
+    tidyr::complete(integrated_seurat_cluster, organ, SP) %>%
+    mutate(n = replace_na(n, 0)) %>% 
+    ggplot(aes(x = integrated_seurat_cluster, y = n, fill = SP)) +
+        geom_bar(stat = "identity", position = "dodge") +
+        facet_grid(organ ~ .) +
+        theme_bw() +
+        theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom")
+```
+---ここまで---
+
+2種間を統合してプロット
+```{r}
+Hs_cells %>%
+    mutate(SP = "Hs") %>%
+    mutate(Human_cell_label = customclassif) -> human_table.merge
+human_table.merge %>%
+    select(integrated_seurat_cluster,
+           Human_cell_label,
+           organ) %>%
+    distinct %>%
+    inner_join(Mm_cells,
+               by = c("integrated_seurat_cluster", "organ")) %>%
+    mutate(SP = "Mm") -> mouse_table.merge
+
+bind_rows(human_table.merge, mouse_table.merge  ) %>%
+    mutate(label = make_term_short(paste(organ,
+                                         Human_cell_label,
+                                         sep = "_")), length = 25) %>%
+    ggplot(aes(x=label, y = n, fill = organ)) +
+    geom_bar(stat = "identity") +
+    facet_grid(SP ~ ., drop = T, scale = "free") +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p4
+ggsave("count_cell_number.png", p4, height = 10, width = length(organs) * 2)
+```
+
+---2/27　追記---
+merge_MGI_data.Rmdの冒頭で行ったマーカー遺伝子一覧データフレームの作成（ヒト）
+マーカー遺伝子の取得・結合させた表を作成（ヒト）
+プロット（ヒト）
+```{r}
+# cell type label
+hs_marker %>%
+  select(customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  distinct %>%
+  arrange(customclassif) %>%
+  write.table("cell_ontology_class.txt",
+            quote = F, sep = "\t", row.names = F)
+
+# マーカー遺伝子はいくつの細胞種でマーカー遺伝子と判断されているのか？
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Gene_name)) %>%
+  distinct %>%
+  dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+# 共有関係で区切る
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Gene_name)) %>%
+  distinct %>%
+  group_by(share) %>%
+  dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1) + facet_grid(. ~ share)
+
+# 細胞腫でまとめる
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  filter(!is.na(Gene_name)) %>% 
+  distinct %>% 
+  dplyr::count(Gene_name) %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+
+# ヒト細胞クラスターごとにマーカー遺伝子の数をカウント
+hs_marker %>%
+  dplyr::select(Gene_stable_ID, organ, cluster, customclassif) %>%
+  distinct %>%
+  group_by(organ) %>%
+  dplyr::count(cluster) %>%
+  ungroup() -> hs_marker_count
+```
+
+---2023/3/1---
+merge_MGI_data.Rmdの冒頭で行ったマーカー遺伝子一覧データフレームの作成（マウス）
+マーカー遺伝子の取得・結合させた表を作成（マウス）
+プロット（マウス）
+```{r}
+# cell type label
+mm_marker %>%
+  select(customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  distinct %>%
+  arrange(customclassif) %>%
+  write.table("mm_cell_ontology_class.txt",
+            quote = F, sep = "\t", row.names = F)
+
+# マーカー遺伝子はいくつの細胞種でマーカー遺伝子と判断されているのか？
+mm_marker %>%
+  dplyr::select(Mouse_gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Mouse_gene_name)) %>%
+  distinct %>%
+  dplyr::count(Mouse_gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+# 共有関係で区切る
+mm_marker %>%
+  dplyr::select(Mouse_gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Mouse_gene_name)) %>%
+  distinct %>%
+  group_by(share) %>%
+  dplyr::count(Mouse_gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1) + facet_grid(. ~ share)
+
+# 細胞腫でまとめる
+mm_marker %>%
+  dplyr::select(Mouse_gene_name, customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  filter(!is.na(Mouse_gene_name)) %>% 
+  distinct %>% 
+  dplyr::count(Mouse_gene_name) %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+
+# ヒト細胞クラスターごとにマーカー遺伝子の数をカウント
+mm_marker %>%
+  dplyr::select(Mouse_gene_stable_ID, organ, cluster, customclassif) %>%
+  distinct %>%
+  group_by(organ) %>%
+  dplyr::count(cluster) %>%
+  ungroup() -> mm_marker_count
+```
+
+ボルケーノプロット（ヒト）
+```{r}
+hs_marker %>% 
+    dplyr::select(Gene_stable_ID, Homology_type, avg_log2FC, p_val_adj, share, organ, customclassif) %>%
+    distinct %>%
+    mutate(type = paste(share, Homology_type),
+           log_FDR = -log10(p_val_adj + 1e-300)) %>%
+    filter(organ == "Lung" & Homology_type == "Hs_SS") %>%
+    ggplot(aes(x=avg_log2FC, y = log_FDR, color = Homology_type)) + 
+    geom_point() +
+    facet_wrap(customclassif ~ .)
+```
+ボルケーノプロット（マウス）
+```{r}
+mm_marker %>% 
+    dplyr::select(Mouse_gene_stable_ID, Homology_type, avg_log2FC,
+                  p_val_adj, share, organ, customclassif) %>%
+    distinct %>%
+    mutate(type = paste(share, Homology_type),
+           log_FDR = -log10(p_val_adj + 1e-300)) %>%
+#    filter(organ == "Lung" & Homology_type == "Mm_SS") %>%
+    ggplot(aes(x=avg_log2FC, y = log_FDR, color = Homology_type)) + 
+    geom_point() +
+    facet_wrap(customclassif ~ .)
+```

@@ -1,0 +1,324 @@
+---
+title: "merge_MGI_data"
+output: html_document
+date: "2023-01-28"
+---
+
+```{r}
+library(RColorBrewer)
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+source("run_seurat_GO_analysis.R")
+source("count_marker_gene_GO.R")
+```
+
+マーカー遺伝子の取得・結合させた表を作成
+```{r}
+organs <- c("Bladder", "Bone_Marrow", "Fat", "Heart", "Kidney", "Large_Intestine",
+            "Liver", "Lung", "Muscle", "Pancreas", "Skin", "Spleen",
+            "Thymus", "Trachea")
+hs_marker <- tibble()
+for(input in organs){
+    outdir <- paste(curdir, input, sep = "/")
+    extract_cluster_label(input, "Hs") -> Hs_cluster_label
+    read_marker_gene_list("Hs", input, "_") %>%
+      select(cluster) %>%
+      distinct %>%
+      unlist %>%
+      as.numeric -> Hs_all
+    for(clstr in Hs_all){
+        paste(outdir, "/Marker_gene/",
+              "Hs_Mm_", input,
+              ".seurat_integrate.cluster_", clstr, ".homology.tsv",
+              sep = "") %>%
+          read_tsv(show_col_types = FALSE) -> marker
+        marker %>%
+          mutate(organ = input) %>%
+          transform(cluster = as.factor(cluster))%>%
+          inner_join(Hs_cluster_label,
+                     by = c("cluster" = "integrated_seurat_cluster")) %>% 
+          bind_rows(hs_marker, .) -> hs_marker
+    }
+}
+write.table(hs_marker, "hs_all_marker_gene.tsv",
+            quote = F, sep = "\t", row.names = F)
+# マーカー遺伝子の数を細胞種と2種間の共通性ごとにカウント
+hs_marker %>%
+    mutate(cell_label = paste(organ, cluster,
+                              sep = "_")) %>%
+    group_by(cell_label) %>%
+    dplyr::count(share) -> hs_marker_count
+write.table(hs_marker_count, "hs_all_marker_gene_count.tsv",
+            quote = F, sep = "\t", row.names = F)
+# cell type label
+hs_marker %>%
+  select(customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  distinct %>%
+  arrange(customclassif) %>%
+  write.table("cell_ontology_class.txt",
+            quote = F, sep = "\t", row.names = F)
+
+# マーカー遺伝子はいくつの細胞種でマーカー遺伝子と判断されているのか？
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Gene_name)) %>%
+  distinct %>%
+  dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+# 共有関係で区切る
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif, organ, share) %>%
+  mutate(label = paste(organ, customclassif, sep = "_")) %>%
+  filter(!is.na(Gene_name)) %>%
+  distinct %>%
+  group_by(share) %>%
+  dplyr::count(Gene_name) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1) + facet_grid(. ~ share)
+
+# 細胞腫でまとめる
+hs_marker %>%
+  dplyr::select(Gene_name, customclassif) %>%
+  mutate(customclassif = str_split(customclassif, "_", simplify = TRUE)[,2]) %>%
+  filter(!is.na(Gene_name)) %>% 
+  distinct %>% 
+  dplyr::count(Gene_name) %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = n)) + geom_histogram(binwidth = 1)
+```
+
+MGIデータの整理
+```{r}
+read_tsv("MGI_Human-Mouse_disease_connection/MGI_DO_nospace.rpt",
+         show_col_types = FALSE) -> MGI_DO
+# ヒト
+MGI_DO %>%
+  filter(Common_Organism_Name == "human") %>%
+  select(Symbol, DO_Disease_ID) -> MGI_human_DO
+# マウス
+MGI_DO %>%
+  filter(Common_Organism_Name == "mouse,_laboratory") %>%
+  select(Symbol, DO_Disease_ID) -> MGI_mouse_DO
+```
+
+Gene homology table
+```{r}
+read_tsv("Gene_name/20230120_Hs-Mm_integrated_full.version2.tsv",
+         show_col_types = FALSE) -> homology
+```
+ヒトとマウスに共通しているDO遺伝子
+```{r}
+homology %>%
+  inner_join(MGI_human_DO, by = c("Gene_name"       = "Symbol"), 
+             multiple = "all") %>%
+  inner_join(MGI_mouse_DO, by = c("Mouse_gene_name" = "Symbol",
+                                  "DO_Disease_ID")) %>%
+  distinct -> MGI_hs_mm_DO
+```
+MGIのDOデータに含まれているDO関連遺伝子を遺伝子の対応関係ごとにカウントする
+```{r}
+homology %>%
+    inner_join(MGI_human_DO,
+               by = c("Gene_name"  = "Symbol"),
+               multiple = "all") %>%
+    dplyr::select("Gene_name", "Homology_type") %>%
+  distinct %>%
+  dplyr::count(Homology_type)
+```
+Hs_SSの遺伝子が関連しているDOはマウスで再現されているか？
+```{r}
+# Hs_ssの遺伝子と関連するDOを抽出して、マウスのDOと遺伝子の対応表と結合させた
+homology %>%
+    inner_join(MGI_human_DO,
+               by = c("Gene_name"  = "Symbol"),
+               multiple = "all") %>%
+    dplyr::select("Gene_name", "Homology_type", "DO_Disease_ID") %>%
+    distinct %>%
+  filter(Homology_type == "Hs_SS") %>%
+  inner_join(MGI_mouse_DO, by = "DO_Disease_ID") -> Hs_ss.mouse_disease
+
+# 病気関連遺伝子の数をカウント
+Hs_ss.mouse_disease  %>%
+  dplyr::select("Gene_name") %>%
+  distinct
+
+# DO数をカウント
+Hs_ss.mouse_disease %>%
+  dplyr::select("DO_Disease_ID") %>%
+  distinct
+```
+
+マウスモデルが作られているが、共通の遺伝子がヒットしなかったDO
+```{r}
+homology %>%
+    inner_join(MGI_human_DO, by = c("Gene_name" = "Symbol"), 
+               multiple = "all") %>%
+    anti_join(MGI_hs_mm_DO, by = c("Gene_stable_ID", "Gene_name",
+                                   "Mouse_gene_stable_ID", "Mouse_homology_type",
+                                   "Homology_type", "Mouse_gene_name",
+                                   "Human_homology_type")) %>% 
+    inner_join(MGI_mouse_DO, by = c("DO_Disease_ID"), multiple = "all") %>%
+    select(-c(Symbol)) %>%
+    distinct -> MGI_hs_mm_DO.different_bg
+```
+
+ヒトのみ
+```{r}
+MGI_human_DO %>%
+  anti_join(MGI_mouse_DO, by = "DO_Disease_ID") -> MGI_hs_only_DO
+```
+
+MGIの病原遺伝子データとマーカー遺伝子情報を結合させる
+```{r}
+hs_marker %>%
+  inner_join(MGI_hs_mm_DO, by = c("Gene_stable_ID", "Gene_name",
+                                  "Mouse_gene_stable_ID", "Mouse_homology_type",
+                                  "Mouse_gene_name", "Human_homology_type",
+                                  "Homology_type")) %>%
+  select(-c("Gene_stable_ID", "Mouse_gene_stable_ID",
+            "Mouse_homology_type", "Human_homology_type")) %>%
+  mutate(cell_label = paste(organ, cluster, sep = "_"))-> hs_mm_marker_disease
+write.table(hs_mm_marker_disease, "MGI_DO/hs_mm_marker_disease_human_gene.tsv",
+            quote = F, row.names = F, sep = "\t")
+```
+他のヒト-マウス共通関係のDOについてもマーカー遺伝子と結合させて出力する
+```{r}
+# マウスにもあるDOだが、関連遺伝子が異なる
+hs_marker %>%
+  inner_join(MGI_hs_mm_DO.different_bg, by = c("Gene_stable_ID", "Gene_name",
+                                               "Mouse_gene_stable_ID",
+                                               "Mouse_homology_type",
+                                               "Mouse_gene_name",
+                                               "Human_homology_type",
+                                               "Homology_type")) %>%
+  select(-c("Gene_stable_ID", "Mouse_gene_stable_ID",
+            "Mouse_homology_type", "Human_homology_type")) %>%
+  mutate(cell_label = paste(organ, cluster,
+                            sep = "_")) -> hs_mm_marker_disease.different_bg
+write.table(hs_mm_marker_disease.different_bg,
+            "MGI_DO/hs_mm_marker_disease_human_gene_different_bg.tsv",
+            quote = F, row.names = F, sep = "\t")
+
+# ヒトのみ
+hs_marker %>%
+  inner_join(MGI_hs_only_DO, by = c("Gene_name" = "Symbol")) %>%
+  select(-c("Gene_stable_ID", "Mouse_gene_stable_ID",
+            "Mouse_homology_type", "Human_homology_type")) %>%
+  mutate(cell_label = paste(organ, cluster,
+                            sep = "_")) -> hs_only_marker_disease
+write.table(hs_only_marker_disease,
+            "MGI_DO/hs_only_marker_disease_human_gene.tsv",
+            quote = F, row.names = F, sep = "\t")
+
+# 全ヒト
+hs_marker %>%
+  inner_join(MGI_human_DO, by = c("Gene_name" = "Symbol")) %>%
+  select(-c("Gene_stable_ID", "Mouse_gene_stable_ID",
+            "Mouse_homology_type", "Human_homology_type")) %>%
+  mutate(cell_label = paste(organ, cluster,
+                            sep = "_")) -> hs_marker_disease
+write.table(hs_marker_disease,
+            "MGI_DO/hs_marker_disease_human_gene.tsv",
+            quote = F, row.names = F, sep = "\t")
+```
+列名：Gene_name, Mouse_gene_name, Homology_type, p_val, avg_log2FC, pct.1, pct.2, p_val_adj, cluster, share, gene, organ, DO_Disease_ID
+
+MGIの全ヒト病原遺伝子データとマーカー遺伝子情報を結合させる
+```{r}
+MGI_DO %>%
+  filter(Common_Organism_Name == "human") %>%
+  select(c("Symbol", "DO_Disease_ID")) %>%
+  inner_join(hs_marker, ., by = c("Gene_name" = "Symbol")) %>%
+  select(-c("Gene_stable_ID", "Mouse_gene_stable_ID",
+            "Mouse_homology_type", "Human_homology_type")) %>%
+  mutate(cell_label = paste(organ, cluster, sep = "_")) %>%
+  distinct -> hs_all_marker_disease
+```
+
+マーカー遺伝子かつ病気関連遺伝子のうち、ヒト-マウスに共通するマーカー遺伝子とヒトのみのマーカー遺伝子
+```{r}
+hs_mm_marker_disease %>%
+  filter(share == "shared") %>%
+  select(Gene_name, DO_Disease_ID) %>%
+  distinct -> hs_mm_marker_disease.shared # Sharedの遺伝子-DO:IDのみ
+hs_mm_marker_disease.shared %>%
+  anti_join(hs_mm_marker_disease, ., by = c("Gene_name", "DO_Disease_ID")) %>%
+  select(Gene_name, DO_Disease_ID) %>%
+  distinct -> hs_mm_marker_disease.hs_only # Hs_onlyの遺伝子-DO:IDのみ
+# これらのDO:IDがscRNA-seqデータにない組織に関連する病気ならば、見つからなくても仕方ない遺伝子と言える
+# 少なくとも上の方の病気は神経系（OK）や免疫系（2種で共通するマーカー遺伝子に含まれていてほしい、Tabula murisの免疫関連細胞の数が少ないから取れていない可能性がある）
+
+# 可視化
+hs_mm_marker_disease %>%
+    inner_join(hs_mm_marker_disease.shared,
+               by = c("Gene_name", "DO_Disease_ID")) %>%
+    ggplot(aes(x=DO_Disease_ID, y = cell_label)) +
+    geom_point() +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) # Sharedの遺伝子-DO:IDの
+
+hs_mm_marker_disease %>%
+    inner_join(hs_mm_marker_disease.hs_only,
+               by = c("Gene_name", "DO_Disease_ID")) %>%
+    ggplot(aes(x=DO_Disease_ID, y = cell_label)) +
+    geom_point() +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) # Hs_onlyの遺伝子-DO:IDのみ
+```
+
+やったほうが良さそうなこと
+・Organ間で共通していそうなcell typeを結合させる
+  ・マーカー遺伝子の一覧の共通性を評価したい
+
+Cell ontology classを利用して可視化を整理したい
+```{r}
+read_tsv("cell_ontology_class.txt",
+         show_col_types = FALSE) -> cell_ontology_sum
+
+hs_mm_marker_disease %>%
+    mutate(cell_ontology_class = str_split(customclassif, "_", simplify = T)[,2]) %>%
+    inner_join(cell_ontology_sum, by = "cell_ontology_class") %>%
+    mutate(cell_ontology_label = paste(summarized_class, cell_label, sep = "_")) %>%
+    ggplot(aes(x=DO_Disease_ID, y = cell_ontology_label,
+               color = summarized_class, shape = share)) +
+    geom_point() +
+    theme_bw() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5),
+          legend.position = "bottom") +
+  NoLegend()
+```
+
+ヒト病原遺伝子のオーソログでモデルマウスが構築された病気について、ヒトのマーカー遺伝子全てを抽出
+```{r}
+MGI_hs_mm_DO %>%
+  select(DO_Disease_ID) %>%
+  inner_join(MGI_DO, by = c("DO_Disease_ID")) %>%
+  filter(Common_Organism_Name == "human") %>%
+  dplyr::count(DO_Disease_ID) %>%
+  ggplot(aes(x=reorder(DO_Disease_ID, n), y= n)) +
+      geom_bar(stat = "identity")
+```
+大部分が1遺伝子-1 DO:IDだった(752/1010 DO:ID)
+
+追加2/9
+```{r}
+hs_mm_marker_disease %>%
+  filter(share == "shared") %>%
+  dplyr::select(DO_Disease_ID) %>%
+  distinct -> hs_mm_marker_disease.shared
+hs_mm_marker_disease %>%
+    filter(share == "Hs_only") %>%
+    dplyr::select(DO_Disease_ID) %>%
+    distinct -> hs_mm_marker_disease.hs_only
+```
+

@@ -1,0 +1,33 @@
+---
+title: "KEGG_pathway"
+output: html_document
+date: "2023-02-09"
+---
+
+```{r}
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+library(clusterProfiler)
+library("AnnotationForge")
+# BiocManager::install("KEGG.db")
+# install.packages("../../Ontology/KEGG.db_3.2.3.tar.gz")
+library("KEGG.db")
+library("GOstats")
+```
+
+コード元：https://shiokoji11235.com/pathway-enrichment-analysis-in-r#outline__1
+```{r}
+#サンプルデータの中のEntrez_Gene_IDを抽出
+gene_IDs<-sample_data$Entrez_Gene_ID
+
+#KEGGエンリッチメント解析を実行
+kegg_enrichment_result <- enrichKEGG(gene=gene_IDs,pvalueCutoff=0.05)
+
+#結果の表示
+head(kegg_enrichment_result, n=10)
+```
+

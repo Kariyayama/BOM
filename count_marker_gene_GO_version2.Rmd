@@ -1,0 +1,534 @@
+---
+title: "GO_analysis"
+output: html_document
+date: "2023-01-26"
+---
+事前準備
+```{r}
+library(RColorBrewer)
+curdir <- "~/Labolatory/JST_Mouse_Human/Tabula/Integration"
+
+# renv::restore()
+setwd(curdir)
+library(here)
+set_here(curdir)
+source("run_seurat_GO_analysis.R")
+source("count_marker_gene_GO.R")
+```
+
+グローバル変数
+```{r}
+test_type <- "FISHER"
+cutoff <- 0.05
+hsapiens <- 9606
+mmuculus <- 10090
+# BP <- "GO:0008150"
+BP <- "ANNOT_TYPE_ID_PANTHER_GO_SLIM_BP"
+header = "number_in_list\tfold_enrichment\tfdr\texpected \tnumber_in_reference\tpValue\tplus_minus\tterm.id\tterm.label"
+types <- c("shared", "Hs_only") # + , "No_homology_info"
+output_directory <- "PANTHER/GO_4condition"
+```
+GO解析
+```{r}
+go_analysis <- function(marker.genes, taxon.id, cutoff = 0.05, outfile = "outfile.txt",
+                        ref_genes = NULL, ref_organism = NULL){
+ if(length(marker.genes) > 0){
+    rba_panther_enrich(marker.genes, taxon.id, BP, test_type = test_type,
+                       cutoff = cutoff, ref_genes = ref_genes, ref_organism = ref_organism) -> marker.result
+    write.table(marker.result$result, file = outfile,
+                quote = F, row.names = F, sep="\t")
+  }else{
+    header %>%
+      write(file = outfile)
+  }
+}
+```
+
+一回分
+```{r}
+input <- "Liver"
+cluster_id <- 0
+go_4condition <- function(organ, cluster_id){
+  # 特定の細胞クラスターの全CCS遺伝子
+  hs_marker %>%
+      filter(organ == input & cluster == cluster_id & !is.na(Gene_stable_ID)) %>%
+      dplyr::select(Gene_stable_ID) %>%
+      distinct %>%
+      unlist -> ccs_gene
+  # 特定の細胞クラスターのHS_SSのCCS遺伝子
+  hs_marker %>%
+      filter(organ == input & cluster == cluster_id & !is.na(Gene_stable_ID) & Homology_type == "Hs_SS") %>%
+      dplyr::select(Gene_stable_ID) %>%
+      distinct %>%
+      unlist -> ccs_gene.hs_ss
+  # 特定の細胞クラスターのヒト特異的なCCS遺伝子
+  hs_marker %>%
+      filter(organ == input & cluster == cluster_id & !is.na(Gene_stable_ID) & share == "Hs_only") %>%
+      dplyr::select(Gene_stable_ID) %>%
+      distinct %>%
+      unlist -> ccs_gene.hs_only
+  # 特定の細胞クラスターのヒト-マウス共通なCCS遺伝子
+  hs_marker %>%
+      filter(organ == input & cluster == cluster_id & !is.na(Gene_stable_ID) & share == "shared") %>%
+      dplyr::select(Gene_stable_ID) %>%
+      distinct %>%
+      unlist -> ccs_gene.share
+
+  # 1. その細胞種全体に濃縮された遺伝子機能
+  # Outfile
+  paste("Hs_", input, "_", cluster_id, "_all_gene_version2.tsv", sep = "") %>%
+    paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  # GO analysis
+  go_analysis(ccs_gene, hsapiens, cutoff = cutoff, outfile = outfile)
+  Sys.sleep(1)
+  
+  # 2. ヒトSS遺伝子に濃縮された遺伝子機能
+  # Outfile
+  paste("Hs_", input, "_", cluster_id, "_Hs_SS_gene_version2.tsv", sep = "") %>%
+    paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  # GO analysis
+  go_analysis(ccs_gene.hs_ss, hsapiens, cutoff = cutoff, outfile = outfile)
+  Sys.sleep(1)
+  
+  # 3. 細胞種マーカー遺伝子中のヒトSS遺伝子に濃縮された遺伝子機能
+  # Outfile
+    paste("Hs_", input, "_", cluster_id, "_Hs_SS_gene_of_CCS_version2.tsv", sep = "") %>%
+      paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  if(length(ccs_gene) > 0){
+    # GO analysis
+    go_analysis(ccs_gene.hs_ss, hsapiens, cutoff = cutoff, outfile = outfile,
+                ref_genes = ccs_gene, ref_organism = hsapiens)
+    Sys.sleep(1)
+  }else{
+    header %>%
+      write(file = outfile)
+  }
+  
+  # 5. その細胞種全体に濃縮された遺伝子機能について、ヒトCCS遺伝子に濃縮された遺伝子機能
+  paste("Hs_", input, "_", cluster_id, "_Hs_only_version2.tsv", sep = "") %>%
+    paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  # GO analysis
+  go_analysis(ccs_gene.hs_only, hsapiens, cutoff = cutoff, outfile = outfile)
+  Sys.sleep(1)
+  # 6. その細胞種のCCS遺伝子のうち、ヒトCCS遺伝子に濃縮された遺伝子機能
+  # Outfile
+    paste("Hs_", input, "_", cluster_id, "_Hs_only_gene_of_CCS_version2.tsv", sep = "") %>%
+      paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  if(length(ccs_gene) > 0){
+    # GO analysis
+    go_analysis(ccs_gene.hs_only, hsapiens, cutoff = cutoff, outfile = outfile,
+                ref_genes = ccs_gene, ref_organism = hsapiens)
+    Sys.sleep(1)
+  }else{
+    header %>%
+      write(file = outfile)
+  }
+  # 7. その細胞種全体に濃縮された遺伝子機能について、ヒト-マウス共有CCS遺伝子に濃縮された遺伝子機能
+  paste("Hs_", input, "_", cluster_id, "_shared_version2.tsv", sep = "") %>%
+    paste(curdir, input, output_directory, ., sep = "/") -> outfile 
+  # GO analysis
+  go_analysis(ccs_gene.share, hsapiens, cutoff = cutoff, outfile = outfile)
+  Sys.sleep(1)
+}
+go_4condition(input, cluster_id)
+```
+
+特定の器官全ての細胞種に対してGO解析
+```{r}
+GO_analysis_for_all_clusters <- function(input){
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(clstr in Hs_all){
+      print(clstr)
+      go_4condition(input, clstr)
+  }
+}
+
+```
+全ての器官に対してやる
+```{r}
+organs <- c("Lung", "Pancreas", "Trachea", "Liver", "Bone_Marrow", "Fat", "Heart", "Bladder", "Kidney", "Large_Intestine", "Muscle", "Skin", "Spleen", "Thymus")
+well_integrated <- c("Lung", "Pancreas", "Trachea", "Liver", "Bone_Marrow", "Fat", "Heart")
+# not_well_integrated <- c("Bladder", "Kidney", "Large_Intestine", "Muscle", "Skin", "Spleen", "Thymus")
+outdir <- paste(curdir, organ, sep = "/") 
+    paste(outdir, output_directory, sep = "/") %>%
+      dir.create()
+for(input in well_integrated){
+    print(input)
+    outdir <- paste(curdir, organ, sep = "/")
+    GO_analysis_for_all_clusters(input)
+}
+
+```
+プロットの色を指定する
+```{r}
+label.share <- c("ccs_hs_only", "ccs_ss", "ccs_shared")
+labelcolors <- colorRampPalette(brewer.pal(length(label.share),
+                                           "Set2"))(length(label.share))
+names(labelcolors) <- label.share
+```
+GO解析の結果を取得してまとめる
+```{r}
+go_result_table <- tibble()
+for(input in well_integrated){
+  print(input)
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(cluster_id in Hs_all){
+    # 1. CCS遺伝子に濃縮された遺伝子機能
+    # Outfile
+    paste("Hs_", input, "_", cluster_id, "_all_gene_version2.tsv", sep = "") %>%
+        paste(curdir, input, output_directory, ., sep = "/") %>%
+        read_tsv(show_col_types = FALSE) %>%
+        mutate(organ = input, cluster = cluster_id,
+               type = "ccs", background = "all") %>%
+        rbind(go_result_table, .) -> go_result_table
+      
+    # 2. ヒトSS遺伝子に濃縮された遺伝子機能
+    # Outfile
+    paste("Hs_", input, "_", cluster_id, "_Hs_SS_gene_version2.tsv", sep = "") %>%
+        paste(curdir, input, output_directory, ., sep = "/") %>%
+        read_tsv(show_col_types = FALSE) %>%
+        mutate(organ = input, cluster = cluster_id,
+               type = "ccs_ss", background = "all") %>%
+        rbind(go_result_table, .) -> go_result_table
+    
+    # 3. 細胞種マーカー遺伝子中のヒトSS遺伝子に濃縮された遺伝子機能
+    # Outfile
+    paste("Hs_", input, "_", cluster_id, "_Hs_SS_gene_of_CCS_version2.tsv",
+          sep = "") %>%
+        paste(curdir, input, output_directory, ., sep = "/") %>%
+        read_tsv(show_col_types = FALSE) %>%
+        mutate(organ = input, cluster = cluster_id,
+               type = "ccs_ss", background = "ccs") %>%
+        rbind(go_result_table, .) -> go_result_table
+    
+    # 5. その細胞種全体に濃縮された遺伝子機能について、ヒトCCS遺伝子に濃縮された遺伝子機能
+    paste("Hs_", input, "_", cluster_id, "_Hs_only_version2.tsv", sep = "") %>%
+        paste(curdir, input, output_directory, ., sep = "/") %>%
+        read_tsv(show_col_types = FALSE) %>%
+        mutate(organ = input, cluster = cluster_id,
+               type = "ccs_hs_only", background = "all") %>%
+        rbind(go_result_table, .) -> go_result_table
+    # 6. その細胞種のCCS遺伝子のうち、ヒトCCS遺伝子に濃縮された遺伝子機能
+    # Outfile
+    paste("Hs_", input, "_", cluster_id, "_Hs_only_gene_of_CCS_version2.tsv", sep = "") %>%
+      paste(curdir, input, output_directory, ., sep = "/") %>%
+      read_tsv(show_col_types = FALSE) %>%
+      mutate(organ = input, cluster = cluster_id,
+             type = "ccs_hs_only", background = "css") %>%
+      rbind(go_result_table, .) -> go_result_table
+    # 7. その細胞種全体に濃縮された遺伝子機能について、ヒト-マウス共有CCS遺伝子に濃縮された遺伝子機能
+    paste("Hs_", input, "_", cluster_id, "_shared_version2.tsv", sep = "") %>%
+      paste(curdir, input, output_directory, ., sep = "/") %>%
+      read_tsv(show_col_types = FALSE) %>%
+      mutate(organ = input, cluster = cluster_id,
+             type = "ccs_shared", background = "all") %>%
+      rbind(go_result_table, .) -> go_result_table
+  }
+}
+go_result_table
+write.table(go_result_table, file = "Hs_PANTHER_GO_result.tsv",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+```
+GO解析の結果を上からプロット
+```{r}
+for(input in well_integrated){
+  print(input)
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(cluster_id in Hs_all){
+    go_result_table %>%
+      mutate(cluster = factor(cluster)) %>%
+      inner_join(cell_type_ontology, by = c("organ", "cluster")) %>%
+      filter(background == "all" & organ == input & cluster == cluster_id) %>%
+      mutate(log_fdr = -log10(fdr)) %>%
+      mutate(GO_short = cut_GO_short(term.id, term.label, 40)) %>%
+      filter(plus_minus == "+") -> go_select_data
+    go_select_data %>%
+      group_by(type) %>%
+      slice_max(log_fdr, n = 30) %>%
+      ungroup() %>%
+      dplyr::select(term.id) %>%
+      distinct -> selected_term_id
+    go_select_data %>%
+      inner_join(selected_term_id, by = "term.id") %>%
+      ggplot(aes(x = reorder(GO_short, log_fdr), y = log_fdr,
+                 fill = type, label = number_in_list)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      facet_grid(type ~ .) +
+      scale_fill_manual(values = labelcolors) +
+      theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+    
+    width_num <- dim(selected_term_id)
+    go_select_data %>%
+      dplyr::select(type) %>%
+      distinct %>%
+      dim -> height_num
+    paste("Hs_", input, "_", cluster_id, "_go_term.png", sep = "") %>%
+            paste(curdir, input, output_directory, ., sep = "/") %>%
+      ggsave(p1, width = 2 + width_num[1] * 0.2, height = 4 + 2 * height_num[1], limitsize = FALSE)
+  }
+}
+```
+全部プロット
+```{r}
+for(input in well_integrated){
+  print(input)
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(cluster_id in Hs_all){
+    go_result_table %>%
+      mutate(cluster = factor(cluster)) %>%
+      inner_join(cell_type_ontology, by = c("organ", "cluster")) %>%
+      filter(background == "all" & organ == input & cluster == cluster_id) %>%
+      mutate(log_fdr = -log10(fdr)) %>%
+      mutate(GO_short = cut_GO_short(term.id, term.label, 40)) %>%
+      filter(plus_minus == "+") -> go_select_data
+    go_select_data %>%
+      group_by(type) %>%
+      ungroup() %>%
+      dplyr::select(term.id) %>%
+      distinct -> selected_term_id
+    go_select_data %>%
+      inner_join(selected_term_id, by = "term.id") %>%
+      ggplot(aes(x = reorder(GO_short, log_fdr), y = log_fdr,
+                 fill = type, label = number_in_list)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      facet_grid(type ~ .) +
+      scale_fill_manual(values = labelcolors) +
+      theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+    
+    width_num <- dim(selected_term_id)
+    go_select_data %>%
+      dplyr::select(type) %>%
+      distinct %>%
+      dim -> height_num
+    go_select_data$customclassif %>% unique() %>%
+        paste("Hs_", input, "_", ., "_all_go_term.png", sep = "") %>%
+        paste(curdir, input, output_directory, ., sep = "/") %>%
+      ggsave(p1, width = 2 + width_num[1] * 0.1, 
+             height = 4 + 2 * height_num[1], limitsize = FALSE)
+  }
+}
+```
+
+ボルケーノプロット
+```{r}
+for(input in well_integrated){
+  print(input)
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(cluster_id in Hs_all){
+    go_result_table %>%
+      mutate(cluster = factor(cluster)) %>%
+      inner_join(cell_type_ontology, by = c("organ", "cluster")) %>%
+      filter(background == "all" & organ == input & cluster == cluster_id) %>%
+      mutate(log_fdr = -log10(fdr)) %>%
+      mutate(GO_short = cut_GO_short(term.id, term.label, 40)) %>%
+      filter(plus_minus == "+") -> go_select_data
+    go_select_data %>%
+      group_by(type) %>%
+      slice_max(log_fdr, n = 30) %>%
+      ungroup() %>%
+      dplyr::select(term.id) %>%
+      distinct -> selected_term_id
+    go_select_data %>%
+      inner_join(selected_term_id, by = "term.id") %>%
+      ggplot(aes(x = expected, y = log_fdr, color = type)) +
+      geom_point() +
+      theme_classic() +
+      scale_color_manual(values = labelcolors) +
+      theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) -> p1
+    
+    width_num <- dim(selected_term_id)
+    go_select_data %>%
+      dplyr::select(type) %>%
+      distinct %>%
+      dim -> height_num
+    paste("Hs_", input, "_", cluster_id, "_go_term_volcano.png", sep = "") %>%
+            paste(curdir, input, output_directory, ., sep = "/") %>%
+      ggsave(p1)
+  }
+}
+```
+
+
+```{r}
+output_count <- tibble()
+for(input in well_integrated){
+  print(input)
+  hs_marker %>%
+      filter(organ == input) %>%
+      dplyr::select(cluster) %>%
+      distinct() %>%
+      unlist -> Hs_all
+  for(cluster_id in Hs_all){
+    go_result_table %>%
+      mutate(cluster = factor(cluster)) %>%
+      inner_join(cell_type_ontology, by = c("organ", "cluster")) %>%
+      filter(background == "all" & organ == input & cluster == cluster_id) %>%
+      mutate(log_fdr = -log10(fdr)) %>%
+      mutate(GO_short = cut_GO_short(term.id, term.label, 40)) %>%
+      dplyr::select(term.id, term.label, type) %>%
+      distinct -> go_select_data
+
+    go_select_data %>%
+      filter(type == "ccs_hs_only") -> css_hs_only
+    go_select_data %>%
+      filter(type == "ccs_ss") -> css_ss
+    go_select_data %>%
+      filter(type == "ccs_shared") -> css_shared
+    # css_hs_only かつ css_shared
+    css_shared %>%
+      inner_join(css_hs_only, by = c("term.id", "term.label")) %>%
+      dim -> css_shared_hs_only
+    # css_hs_onlyにあるがccs_sharedにない
+    css_shared %>%
+      anti_join(css_hs_only, ., by = c("term.id", "term.label")) %>%
+      dim -> css_hs_only_not_shared
+    # ccs_sharedにあるがccs_hs_onlyにない
+    css_shared %>%
+      anti_join(css_hs_only, by = c("term.id", "term.label")) %>%
+      dim -> css_shared_not_hs_only
+    # ccs_sharedかつccs_ss
+    css_shared %>%
+      inner_join(css_ss, by = c("term.id", "term.label")) %>%
+      dim -> css_shared_ss
+    # css_ssにあるがccs_sharedにない
+    css_shared %>%
+      anti_join(css_ss, ., by = c("term.id", "term.label")) %>%
+      dim -> css_ss_not_shared
+    # ccs_sharedにあるがccs_ssにない
+    css_shared %>%
+      anti_join(css_ss, by = c("term.id", "term.label")) %>%
+      dim -> css_shared_not_ss
+    
+    tibble(organ = input, cluster = cluster_id,
+           css_shared_and_hsonly = css_shared_hs_only[1],
+           css_hsonly_and_shared = css_shared_hs_only[1],
+           css_hsonly_not_shared = css_hs_only_not_shared[1],
+           css_shared_not_hsonly = css_shared_not_hs_only[1],
+           css_shared_and_ss = css_shared_ss[1],
+           css_ss_and_shared = css_shared_ss[1],
+           css_ss_not_shared = css_ss_not_shared[1],
+           css_shared_not_ss = css_shared_not_ss[1]) %>%
+      bind_rows(output_count, .) -> output_count
+  }
+}
+output_count %>%
+    pivot_longer(-c(organ, cluster), names_to = "relation") %>%
+    mutate(cluster=factor(as.character(cluster))) -> output_count_tidyr
+```
+
+
+```{r}
+# scoreが大きい順に並び替え
+human_CCS_gene_ratio %>%
+    mutate(cluster = str_split(customclassif, "_", simplify = TRUE)[,1]) %>%
+    filter(integration == "Good") %>% 
+    mutate(score = ratio * n.x, cluster = factor(cluster)) %>%
+    inner_join(output_count_tidyr, by = c("organ", "cluster")) %>%
+    ggplot(aes(x = reorder(cell_type_label, score), y = relation,
+               fill = log10(value + 0.1)))+
+    geom_tile() +
+    theme_classic() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 細胞種の大枠で区切り
+human_CCS_gene_ratio %>%
+    mutate(cluster = str_split(customclassif, "_", simplify = TRUE)[,1]) %>%
+    filter(integration == "Good") %>% 
+    mutate(score = ratio * n.x, cluster = factor(cluster)) %>%
+    inner_join(output_count_tidyr, by = c("organ", "cluster")) %>%
+    ggplot(aes(x = cell_type_label, y = relation, fill = log10(value + 0.1)))+
+    geom_tile() +
+    facet_grid(. ~ large_summarized_class, scales = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_classic() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+割合でプロット
+```{r}
+convert_type <- function(type){
+        result <- c()
+        for(target in type){
+            if(target == "ccs"){
+                result <- c(result, "ccs")
+            }else if(target == "ccs_hs_only"){
+                result <- c(result, "hsonly")
+            }else if(target == "ccs_shared"){
+                result <- c(result, "shared")
+            }else if(target == "ccs_ss"){
+                result <- c(result, "ss")
+            }
+        }
+        return(result)
+}
+
+go_result_table %>%
+    group_by(organ, cluster) %>%
+    dplyr::count(type) %>%
+    mutate(target = convert_type(type)) -> count_go
+
+output_count %>%
+    pivot_longer(-c(organ, cluster), names_to = c("query", "relation", "subject"),
+                 names_pattern = "css_(.*)_(.*)_(.*)") %>%
+    inner_join(count_go, by = c("query" = "target", "organ", "cluster")) %>%
+    mutate(ratio = value/n,
+           cluster = factor(cluster)) -> output_count_tidyr_relation
+
+human_CCS_gene_ratio %>%
+    mutate(cluster = str_split(customclassif, "_", simplify = TRUE)[,1]) %>%
+    filter(integration == "Good") %>% 
+    mutate(score = ratio * n.x, cluster = factor(cluster)) -> human_CCS_gene_ratio.score
+
+human_CCS_gene_ratio.score %>%
+    inner_join(output_count_tidyr_relation, by = c("organ", "cluster")) %>%
+    mutate(relation = paste(query, relation, subject)) %>%
+    filter(query == "hsonly" | subject == "hsonly" ) %>%
+    ggplot(aes(x = cell_type_label, y = relation, 
+               fill = ratio.y, label = round(value, digits = 3)))+
+    geom_tile() +
+    geom_text(angle=45) +
+    facet_grid(. ~ summarized_class, scales = "free_x", space = "free_x",
+               labeller = label_wrap_gen(5)) +
+    theme_classic() +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+```
+
+```{r}
+human_organ %>%
+    inner_join(human_organ.selected, by = c("GO_short")) %>%
+    filter(fdr_log > 0) %>%
+    ggplot(aes(x = GO_short, y = cell_label, color = group)) +
+    geom_point(size = 4) +
+    theme_bw() +
+    scale_color_manual(values = labelcolors) +
+    theme(axis.text.x =
+              element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
